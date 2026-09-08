@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스티커 자동/수동 자르기 (여백 0 & ZIP 다운)</title>
+    <title>스티커 자르기 (로딩 표시 & 수동 자르기 지원)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body {
@@ -11,8 +11,34 @@
             background-color: #f5f5f7;
             padding: 20px;
             color: #333;
+            margin: 0;
         }
         h2 { margin-top: 0; }
+        
+        /* 로딩 오버레이 화면 */
+        #loadingOverlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 9999;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .spinner {
+            border: 5px solid rgba(255,255,255,0.3);
+            border-top: 5px solid white;
+            border-radius: 50%;
+            width: 50px; height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
         .upload-box {
             background: white;
             padding: 20px;
@@ -52,35 +78,38 @@
             transition: background-color 0.2s;
         }
         button:active { background-color: #d1d1d6; }
-        .primary-btn {
-            background-color: #007aff;
-            color: white;
-        }
+        .primary-btn { background-color: #007aff; color: white; }
         .primary-btn:active { background-color: #0056b3; }
-        .mode-btn { background-color: #333; color: white; }
-        .mode-btn:active { background-color: #000; }
+        .success-btn { background-color: #34c759; color: white; }
 
-        /* 이미지 및 캔버스 표시 영역 */
-        #imageArea {
-            position: relative;
-            margin-bottom: 20px;
+        /* 수동 자르기 영역 */
+        #manualArea {
+            display: none;
+            flex-direction: column;
+            align-items: center;
             background: white;
-            padding: 15px;
+            padding: 20px;
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            margin-bottom: 20px;
+            overflow-x: auto;
         }
-        #sourceCanvas {
-            max-width: 100%;
-            height: auto;
+        #canvasContainer {
+            position: relative;
+            margin-top: 15px;
+            display: inline-block;
+            border: 1px solid #ccc;
+            background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), 
+                              linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee);
+            background-size: 16px 16px;
+            background-position: 0 0, 8px 8px;
         }
+        #sourceCanvas { display: block; }
         #drawCanvas {
             position: absolute;
-            top: 0;
-            left: 0;
+            top: 0; left: 0;
             cursor: crosshair;
+            touch-action: none; /* 모바일/아이패드 스크롤 방지 */
         }
 
         #output {
@@ -97,282 +126,212 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            position: relative;
             cursor: pointer;
         }
         .sticker-card input[type="checkbox"] {
-            width: 20px;
-            height: 20px;
-            margin-bottom: 10px;
-            cursor: pointer;
+            width: 20px; height: 20px;
+            margin-bottom: 10px; pointer-events: none;
         }
         .sticker-card img {
-            max-width: 150px;
-            max-height: 150px;
+            max-width: 150px; max-height: 150px;
             background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), 
                               linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee);
-            background-size: 16px 16px;
-            background-position: 0 0, 8px 8px;
-            border: 1px solid #e5e5e5;
-            border-radius: 4px;
+            background-size: 16px 16px; background-position: 0 0, 8px 8px;
+            border: 1px solid #e5e5e5; border-radius: 4px;
         }
-        .sticker-card.selected {
-            border: 2px solid #007aff;
-            padding: 10px;
-        }
+        .sticker-card.selected { border: 2px solid #007aff; padding: 10px; }
     </style>
 </head>
 <body>
 
+    <!-- 화면 전체를 덮는 로딩 표시창 -->
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <div id="loadingText">작업을 처리하고 있습니다...</div>
+    </div>
+
     <div class="upload-box">
         <h2>✂️ 스티커 자동/수동 자르기</h2>
-        <p>프로크리에이트에서 배경을 투명하게 저장한 <strong>PNG 파일을 여러 장 선택</strong>해서 올릴 수 있습니다.</p>
+        <p>프로크리에이트에서 배경을 투명하게 저장한 PNG 파일을 업로드하세요.</p>
         <input type="file" id="uploadInput" accept="image/png" multiple>
     </div>
 
     <div id="controlPanel">
-        <button id="autoCropModeBtn" class="primary-btn">자동 자르기 모드</button>
-        <button id="manualCropModeBtn">수동 자르기 모드</button>
-        <button id="cropBtn" style="display: none; background-color: #ff9500; color: white;">자르기</button>
+        <button id="modeToggleBtn" class="primary-btn">수동 자르기 모드로 전환</button>
         <button id="selectAllBtn">전체 선택</button>
         <button id="deselectAllBtn">전체 해제</button>
-        <button id="downloadZipBtn" class="primary-btn">선택한 이미지 ZIP 다운로드</button>
+        <button id="downloadZipBtn" class="success-btn">선택한 이미지 ZIP 다운로드</button>
     </div>
 
-    <!-- 이미지 및 캔버스 표시 영역 -->
-    <div id="imageArea" style="display: none;">
-        <canvas id="sourceCanvas"></canvas>
-        <canvas id="drawCanvas" style="display: none;"></canvas>
+    <!-- 수동 자르기 캔버스 영역 (초기엔 숨김) -->
+    <div id="manualArea">
+        <p><strong>수동 자르기:</strong> 자르고 싶은 영역을 드래그하세요! (아래 목록에 즉시 추가됩니다)</p>
+        <div id="canvasContainer">
+            <canvas id="sourceCanvas"></canvas>
+            <canvas id="drawCanvas"></canvas>
+        </div>
     </div>
 
     <div id="output"></div>
 
     <script>
         let globalStickerCount = 0;
-        let isDrawing = false;
-        let startPoint = null;
-        let currentPoint = null;
-        let currentMode = 'auto'; // 'auto' or 'manual'
-        let originalImage = null; // 원본 이미지 객체 저장
-        let autoCropRects = []; // 자동 자르기 사각형 좌표 저장
+        let isManualMode = false;
+        
+        // 로딩창 제어 함수
+        function showLoading(text) {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loadingOverlay').style.display = 'flex';
+        }
+        function hideLoading() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
 
-        // 버튼 이벤트 리스너 설정
+        // 모드 전환
+        document.getElementById('modeToggleBtn').addEventListener('click', function() {
+            isManualMode = !isManualMode;
+            if (isManualMode) {
+                this.textContent = "자동 자르기 결과만 보기";
+                this.classList.replace('primary-btn', 'success-btn');
+                document.getElementById('manualArea').style.display = 'flex';
+            } else {
+                this.textContent = "수동 자르기 모드로 전환";
+                this.classList.replace('success-btn', 'primary-btn');
+                document.getElementById('manualArea').style.display = 'none';
+            }
+        });
+
+        // 전체 선택 / 해제
         document.getElementById('selectAllBtn').addEventListener('click', () => {
-            document.querySelectorAll('.sticker-checkbox').forEach(cb => {
-                cb.checked = true;
-                cb.parentElement.classList.add('selected');
-            });
+            document.querySelectorAll('.sticker-checkbox').forEach(cb => { cb.checked = true; cb.parentElement.classList.add('selected'); });
         });
-
         document.getElementById('deselectAllBtn').addEventListener('click', () => {
-            document.querySelectorAll('.sticker-checkbox').forEach(cb => {
-                cb.checked = false;
-                cb.parentElement.classList.remove('selected');
-            });
+            document.querySelectorAll('.sticker-checkbox').forEach(cb => { cb.checked = false; cb.parentElement.classList.remove('selected'); });
         });
 
+        // ZIP 다운로드 (로딩 표시 적용)
         document.getElementById('downloadZipBtn').addEventListener('click', () => {
             const checkedBoxes = document.querySelectorAll('.sticker-checkbox:checked');
-            if (checkedBoxes.length === 0) {
-                alert('다운로드할 스티커를 선택해주세요.');
-                return;
-            }
+            if (checkedBoxes.length === 0) return alert('다운로드할 스티커를 선택해주세요.');
 
-            const zip = new JSZip();
-            const originalBtnText = document.getElementById('downloadZipBtn').textContent;
-            document.getElementById('downloadZipBtn').textContent = 'ZIP 생성 중...';
+            showLoading('ZIP 파일을 생성 중입니다...');
+            
+            // 브라우저가 화면(로딩창)을 그릴 시간을 주기 위해 setTimeout 사용
+            setTimeout(() => {
+                const zip = new JSZip();
+                checkedBoxes.forEach(cb => {
+                    const filename = cb.dataset.filename;
+                    const base64Data = cb.dataset.imgData.split(',')[1]; 
+                    zip.file(filename, base64Data, {base64: true});
+                });
 
-            checkedBoxes.forEach(cb => {
-                const filename = cb.dataset.filename;
-                const base64Data = cb.dataset.imgData.split(',')[1]; 
-                zip.file(filename, base64Data, {base64: true});
-            });
-
-            zip.generateAsync({type: "blob"}).then(function(content) {
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(content);
-                link.download = "stickers.zip";
-                link.click();
-                document.getElementById('downloadZipBtn').textContent = originalBtnText;
-            });
+                zip.generateAsync({type: "blob"}).then(function(content) {
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(content);
+                    link.download = "stickers.zip";
+                    link.click();
+                    hideLoading();
+                });
+            }, 100);
         });
 
-        // 모드 전환 버튼 이벤트 리스너
-        document.getElementById('autoCropModeBtn').addEventListener('click', () => {
-            currentMode = 'auto';
-            document.getElementById('autoCropModeBtn').classList.add('primary-btn');
-            document.getElementById('manualCropModeBtn').classList.remove('primary-btn');
-            document.getElementById('drawCanvas').style.display = 'none';
-            document.getElementById('cropBtn').style.display = 'none';
-            // 자동 자르기 결과 출력
-            renderAutoCropResults();
-        });
-
-        document.getElementById('manualCropModeBtn').addEventListener('click', () => {
-            currentMode = 'manual';
-            document.getElementById('manualCropModeBtn').classList.add('primary-btn');
-            document.getElementById('autoCropModeBtn').classList.remove('primary-btn');
-            document.getElementById('drawCanvas').style.display = 'block';
-            document.getElementById('cropBtn').style.display = 'block';
-            // 자동 자르기 결과 숨기기
-            document.getElementById('output').innerHTML = '';
-        });
-
-        // 자르기 버튼 이벤트 리스너 (수동 모드)
-        document.getElementById('cropBtn').addEventListener('click', handleManualCrop);
-
+        // 파일 업로드 및 자동 자르기 처리
         document.getElementById('uploadInput').addEventListener('change', function(e) {
             const files = e.target.files;
             if (files.length === 0) return;
 
-            const output = document.getElementById('output');
-            output.innerHTML = ''; // 화면 초기화
-            document.getElementById('controlPanel').style.display = 'flex';
-            document.getElementById('imageArea').style.display = 'none'; // 초기에는 숨김
-
+            document.getElementById('output').innerHTML = '';
+            document.getElementById('controlPanel').style.display = 'none';
+            document.getElementById('manualArea').style.display = 'none';
             globalStickerCount = 0;
-            autoCropRects = []; // 초기화
 
-            // 여러 장 업로드 시 첫 번째 이미지만 표시하고 자르기 진행 (자동 자르기 결과는 모두 출력)
-            // 수동 자르기는 표시된 이미지에 대해서만 작동
-            const firstFile = files[0];
-            const img = new Image();
-            img.onload = function() {
-                originalImage = img;
-                const sourceCanvas = document.getElementById('sourceCanvas');
-                sourceCanvas.width = img.width;
-                sourceCanvas.height = img.height;
-                const ctx = sourceCanvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
+            showLoading('이미지 분석 및 분리 중...');
 
-                // 이미지 표시 영역 보이기
-                document.getElementById('imageArea').style.display = 'flex';
+            // UI 업데이트(로딩창 띄우기) 후 연산을 시작하도록 약간의 지연
+            setTimeout(() => {
+                let filesProcessed = 0;
 
-                // 그리기 캔버스 설정
-                const drawCanvas = document.getElementById('drawCanvas');
-                drawCanvas.width = img.width;
-                drawCanvas.height = img.height;
-                // 그리기 캔버스는 투명하게 유지
-
-                // 그리기 이벤트 핸들러 추가
-                addDrawingListeners(drawCanvas);
-
-                // 자동 자르기 실행 (기본 모드)
-                if (currentMode === 'auto') {
-                    // 모든 이미지에 대해 자동 자르기 실행
-                    Array.from(files).forEach(file => {
-                        processAutoCrop(file);
-                    });
-                }
-            };
-            img.src = URL.createObjectURL(firstFile);
-        });
-
-        function processAutoCrop(file) {
-            const img = new Image();
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                ctx.drawImage(img, 0, 0);
-
-                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const data = imgData.data;
-                const width = canvas.width;
-                const height = canvas.height;
-                
-                const visited = new Uint8Array(width * height);
-
-                for (let y = 0; y < height; y++) {
-                    for (let x = 0; x < width; x++) {
-                        const pIdx = y * width + x;
-                        if (visited[pIdx]) continue;
-
-                        const alpha = data[pIdx * 4 + 3];
-                        if (alpha < 10) {
-                            visited[pIdx] = 1;
-                            continue;
+                Array.from(files).forEach((file, fileIndex) => {
+                    const img = new Image();
+                    img.onload = function() {
+                        // 수동 자르기를 위해 첫 번째 이미지를 캔버스에 세팅
+                        if (fileIndex === 0) {
+                            setupManualCanvas(img);
                         }
 
-                        let minX = x, maxX = x, minY = y, maxY = y;
-                        const queue = [pIdx];
-                        visited[pIdx] = 1;
-                        
-                        let area = 0;
-                        let head = 0;
+                        // 자동 자르기 로직 (BFS 알고리즘)
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width; canvas.height = img.height;
+                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                        ctx.drawImage(img, 0, 0);
 
-                        while (head < queue.length) {
-                            const curr = queue[head++];
-                            area++;
-                            
-                            const cx = curr % width;
-                            const cy = Math.floor(curr / width);
+                        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const data = imgData.data;
+                        const width = canvas.width; const height = canvas.height;
+                        const visited = new Uint8Array(width * height);
 
-                            if (cx < minX) minX = cx;
-                            if (cx > maxX) maxX = cx;
-                            if (cy < minY) minY = cy;
-                            if (cy > maxY) maxY = cy;
+                        for (let y = 0; y < height; y++) {
+                            for (let x = 0; x < width; x++) {
+                                const pIdx = y * width + x;
+                                if (visited[pIdx]) continue;
+                                if (data[pIdx * 4 + 3] < 10) { visited[pIdx] = 1; continue; }
 
-                            const neighbors = [curr - width, curr + width, curr - 1, curr + 1];
-                            for (let i = 0; i < 4; i++) {
-                                const n = neighbors[i];
-                                if (n < 0 || n >= width * height) continue;
-                                if (i === 2 && curr % width === 0) continue; 
-                                if (i === 3 && curr % width === width - 1) continue; 
+                                let minX = x, maxX = x, minY = y, maxY = y;
+                                const queue = [pIdx];
+                                visited[pIdx] = 1;
+                                let area = 0; let head = 0;
 
-                                if (!visited[n]) {
-                                    visited[n] = 1;
-                                    if (data[n * 4 + 3] >= 10) {
-                                        queue.push(n);
+                                while (head < queue.length) {
+                                    const curr = queue[head++];
+                                    area++;
+                                    const cx = curr % width; const cy = Math.floor(curr / width);
+                                    if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+                                    if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+
+                                    const neighbors = [curr - width, curr + width, curr - 1, curr + 1];
+                                    for (let i = 0; i < 4; i++) {
+                                        const n = neighbors[i];
+                                        if (n < 0 || n >= width * height) continue;
+                                        if (i === 2 && curr % width === 0) continue; 
+                                        if (i === 3 && curr % width === width - 1) continue; 
+                                        if (!visited[n]) {
+                                            visited[n] = 1;
+                                            if (data[n * 4 + 3] >= 10) queue.push(n);
+                                        }
                                     }
+                                }
+                                // 노이즈 제외: 100픽셀 이상 덩어리만 저장
+                                if (area > 100) {
+                                    addStickerToOutput(ctx, minX, minY, maxX - minX + 1, maxY - minY + 1);
                                 }
                             }
                         }
 
-                        if (area > 100) {
-                            const rect = {x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1};
-                            autoCropRects.push(rect);
-                            renderAutoCropResult(img, rect);
+                        // 모든 파일 처리가 끝났는지 확인
+                        filesProcessed++;
+                        if (filesProcessed === files.length) {
+                            document.getElementById('controlPanel').style.display = 'flex';
+                            hideLoading();
                         }
-                    }
-                }
-            };
-            img.src = URL.createObjectURL(file);
-        }
+                    };
+                    img.src = URL.createObjectURL(file);
+                });
+            }, 100);
+        });
 
-        function renderAutoCropResult(img, rect) {
-            globalStickerCount++; 
-            
+        // 추출된 이미지를 화면(하단 목록)에 추가하는 함수
+        function addStickerToOutput(sourceCtx, x, y, w, h) {
+            if (w <= 0 || h <= 0) return;
+            globalStickerCount++;
             const cropCanvas = document.createElement('canvas');
-            cropCanvas.width = rect.w;
-            cropCanvas.height = rect.h;
-            const cropCtx = cropCanvas.getContext('2d');
+            cropCanvas.width = w; cropCanvas.height = h;
+            cropCanvas.getContext('2d').putImageData(sourceCtx.getImageData(x, y, w, h), 0, 0);
             
-            // 이미지 객체에서 자르기
-            cropCtx.drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
             const dataUrl = cropCanvas.toDataURL("image/png");
-            
-            const filename = `sticker_auto_${String(globalStickerCount).padStart(3, '0')}.png`;
-            renderCroppedImage(dataUrl, filename);
-        }
+            const filename = `sticker_${String(globalStickerCount).padStart(3, '0')}.png`;
 
-        function renderAutoCropResults() {
-            // 현재 표시된 이미지에 대한 자동 자르기 결과만 다시 출력
-            const output = document.getElementById('output');
-            output.innerHTML = '';
-            globalStickerCount = 0; // 초기화
-
-            // 업로드된 모든 이미지에 대해 자동 자르기 다시 실행
-            const files = document.getElementById('uploadInput').files;
-            Array.from(files).forEach(file => {
-                processAutoCrop(file);
-            });
-        }
-
-        function renderCroppedImage(dataUrl, filename) {
             const card = document.createElement('div');
-            card.className = 'sticker-card selected'; 
+            card.className = 'sticker-card selected';
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
@@ -384,4 +343,107 @@
             const resultImg = document.createElement('img');
             resultImg.src = dataUrl;
 
-            card.addEventListener('click
+            card.addEventListener('click', () => {
+                checkbox.checked = !checkbox.checked;
+                checkbox.checked ? card.classList.add('selected') : card.classList.remove('selected');
+            });
+
+            card.appendChild(checkbox);
+            card.appendChild(resultImg);
+            document.getElementById('output').appendChild(card); // 맨 뒤에 추가
+        }
+
+        // ==========================
+        // 수동 자르기 (드래그) 관련 로직
+        // ==========================
+        let drawCtx, originalCtx;
+        let isDrawing = false;
+        let startX, startY;
+
+        function setupManualCanvas(img) {
+            const sCanvas = document.getElementById('sourceCanvas');
+            const dCanvas = document.getElementById('drawCanvas');
+            sCanvas.width = dCanvas.width = img.width;
+            sCanvas.height = dCanvas.height = img.height;
+            
+            originalCtx = sCanvas.getContext('2d', { willReadFrequently: true });
+            originalCtx.drawImage(img, 0, 0);
+            
+            drawCtx = dCanvas.getContext('2d');
+            drawCtx.strokeStyle = '#007aff';
+            drawCtx.lineWidth = 2;
+            drawCtx.setLineDash([5, 5]); // 점선 표시
+
+            // 마우스 이벤트
+            dCanvas.addEventListener('mousedown', startDraw);
+            dCanvas.addEventListener('mousemove', drawing);
+            dCanvas.addEventListener('mouseup', endDraw);
+            dCanvas.addEventListener('mouseout', () => { if(isDrawing) endDraw(); });
+
+            // 터치(아이패드 애플펜슬) 이벤트
+            dCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDraw(e.touches[0]); }, {passive: false});
+            dCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); drawing(e.touches[0]); }, {passive: false});
+            dCanvas.addEventListener('touchend', endDraw);
+        }
+
+        function getMousePos(e) {
+            const rect = document.getElementById('drawCanvas').getBoundingClientRect();
+            // 화면 크기에 맞게 스케일링된 캔버스 좌표 보정
+            const scaleX = document.getElementById('drawCanvas').width / rect.width;
+            const scaleY = document.getElementById('drawCanvas').height / rect.height;
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        function startDraw(e) {
+            isDrawing = true;
+            const pos = getMousePos(e);
+            startX = pos.x; startY = pos.y;
+        }
+
+        function drawing(e) {
+            if (!isDrawing) return;
+            const pos = getMousePos(e);
+            drawCtx.clearRect(0, 0, drawCtx.canvas.width, drawCtx.canvas.height);
+            
+            // 어둡게 배경 깔기
+            drawCtx.fillStyle = 'rgba(0,0,0,0.3)';
+            drawCtx.fillRect(0, 0, drawCtx.canvas.width, drawCtx.canvas.height);
+            
+            // 선택한 영역만 맑게 뚫기
+            const w = pos.x - startX;
+            const h = pos.y - startY;
+            drawCtx.clearRect(startX, startY, w, h);
+            drawCtx.strokeRect(startX, startY, w, h);
+        }
+
+        function endDraw(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            // 마우스가 떼어졌을 때 그려진 네모를 기준으로 하단에 스티커 추가
+            let rectW = drawCtx.canvas.width; // 기본값 (임시)
+            
+            // 현재 그려진 사각형의 크기를 가져오는 로직 (꼼수: getMousePos를 못쓰니 저장된 startX 사용)
+            // 브라우저 호환성을 위해 이벤트 객체 확인 후 처리
+            if (e && e.clientX) {
+                const pos = getMousePos(e);
+                const x = Math.min(startX, pos.x);
+                const y = Math.min(startY, pos.y);
+                const w = Math.abs(pos.x - startX);
+                const h = Math.abs(pos.y - startY);
+                
+                // 너무 작은 클릭은 무시
+                if (w > 10 && h > 10) {
+                    addStickerToOutput(originalCtx, x, y, w, h);
+                }
+            }
+            
+            // 캔버스 초기화 (그린 네모 지우기)
+            drawCtx.clearRect(0, 0, drawCtx.canvas.width, drawCtx.canvas.height);
+        }
+    </script>
+</body>
+</html>
