@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스티커 자동 자르기 (다중 업로드 & ZIP 다운)</title>
+    <title>스티커 자동/수동 자르기 (여백 0 & ZIP 다운)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body {
@@ -57,6 +57,31 @@
             color: white;
         }
         .primary-btn:active { background-color: #0056b3; }
+        .mode-btn { background-color: #333; color: white; }
+        .mode-btn:active { background-color: #000; }
+
+        /* 이미지 및 캔버스 표시 영역 */
+        #imageArea {
+            position: relative;
+            margin-bottom: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #sourceCanvas {
+            max-width: 100%;
+            height: auto;
+        }
+        #drawCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: crosshair;
+        }
 
         #output {
             display: flex;
@@ -100,21 +125,38 @@
 <body>
 
     <div class="upload-box">
-        <h2>✂️ 스티커 자동 분리 도구</h2>
+        <h2>✂️ 스티커 자동/수동 자르기</h2>
         <p>프로크리에이트에서 배경을 투명하게 저장한 <strong>PNG 파일을 여러 장 선택</strong>해서 올릴 수 있습니다.</p>
-        <!-- multiple 속성 추가: 여러 파일 동시 선택 가능 -->
         <input type="file" id="uploadInput" accept="image/png" multiple>
     </div>
 
     <div id="controlPanel">
+        <button id="autoCropModeBtn" class="primary-btn">자동 자르기 모드</button>
+        <button id="manualCropModeBtn">수동 자르기 모드</button>
+        <button id="cropBtn" style="display: none; background-color: #ff9500; color: white;">자르기</button>
         <button id="selectAllBtn">전체 선택</button>
         <button id="deselectAllBtn">전체 해제</button>
         <button id="downloadZipBtn" class="primary-btn">선택한 이미지 ZIP 다운로드</button>
     </div>
 
+    <!-- 이미지 및 캔버스 표시 영역 -->
+    <div id="imageArea" style="display: none;">
+        <canvas id="sourceCanvas"></canvas>
+        <canvas id="drawCanvas" style="display: none;"></canvas>
+    </div>
+
     <div id="output"></div>
 
     <script>
+        let globalStickerCount = 0;
+        let isDrawing = false;
+        let startPoint = null;
+        let currentPoint = null;
+        let currentMode = 'auto'; // 'auto' or 'manual'
+        let originalImage = null; // 원본 이미지 객체 저장
+        let autoCropRects = []; // 자동 자르기 사각형 좌표 저장
+
+        // 버튼 이벤트 리스너 설정
         document.getElementById('selectAllBtn').addEventListener('click', () => {
             document.querySelectorAll('.sticker-checkbox').forEach(cb => {
                 cb.checked = true;
@@ -155,136 +197,191 @@
             });
         });
 
+        // 모드 전환 버튼 이벤트 리스너
+        document.getElementById('autoCropModeBtn').addEventListener('click', () => {
+            currentMode = 'auto';
+            document.getElementById('autoCropModeBtn').classList.add('primary-btn');
+            document.getElementById('manualCropModeBtn').classList.remove('primary-btn');
+            document.getElementById('drawCanvas').style.display = 'none';
+            document.getElementById('cropBtn').style.display = 'none';
+            // 자동 자르기 결과 출력
+            renderAutoCropResults();
+        });
+
+        document.getElementById('manualCropModeBtn').addEventListener('click', () => {
+            currentMode = 'manual';
+            document.getElementById('manualCropModeBtn').classList.add('primary-btn');
+            document.getElementById('autoCropModeBtn').classList.remove('primary-btn');
+            document.getElementById('drawCanvas').style.display = 'block';
+            document.getElementById('cropBtn').style.display = 'block';
+            // 자동 자르기 결과 숨기기
+            document.getElementById('output').innerHTML = '';
+        });
+
+        // 자르기 버튼 이벤트 리스너 (수동 모드)
+        document.getElementById('cropBtn').addEventListener('click', handleManualCrop);
+
         document.getElementById('uploadInput').addEventListener('change', function(e) {
             const files = e.target.files;
             if (files.length === 0) return;
 
             const output = document.getElementById('output');
-            output.innerHTML = ''; // 새 파일들 업로드 시 화면 초기화
-            document.getElementById('controlPanel').style.display = 'none';
+            output.innerHTML = ''; // 화면 초기화
+            document.getElementById('controlPanel').style.display = 'flex';
+            document.getElementById('imageArea').style.display = 'none'; // 초기에는 숨김
 
-            let globalStickerCount = 0; // 여러 장의 이미지를 아우르는 전체 스티커 번호
+            globalStickerCount = 0;
+            autoCropRects = []; // 초기화
 
-            // 업로드된 파일들을 하나씩 처리
-            Array.from(files).forEach(file => {
-                const img = new Image();
-                img.onload = function() {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                    ctx.drawImage(img, 0, 0);
+            // 여러 장 업로드 시 첫 번째 이미지만 표시하고 자르기 진행 (자동 자르기 결과는 모두 출력)
+            // 수동 자르기는 표시된 이미지에 대해서만 작동
+            const firstFile = files[0];
+            const img = new Image();
+            img.onload = function() {
+                originalImage = img;
+                const sourceCanvas = document.getElementById('sourceCanvas');
+                sourceCanvas.width = img.width;
+                sourceCanvas.height = img.height;
+                const ctx = sourceCanvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
 
-                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const data = imgData.data;
-                    const width = canvas.width;
-                    const height = canvas.height;
-                    
-                    const visited = new Uint8Array(width * height);
-                    const rects = [];
+                // 이미지 표시 영역 보이기
+                document.getElementById('imageArea').style.display = 'flex';
 
-                    for (let y = 0; y < height; y++) {
-                        for (let x = 0; x < width; x++) {
-                            const pIdx = y * width + x;
-                            if (visited[pIdx]) continue;
+                // 그리기 캔버스 설정
+                const drawCanvas = document.getElementById('drawCanvas');
+                drawCanvas.width = img.width;
+                drawCanvas.height = img.height;
+                // 그리기 캔버스는 투명하게 유지
 
-                            const alpha = data[pIdx * 4 + 3];
-                            if (alpha < 10) {
-                                visited[pIdx] = 1;
-                                continue;
-                            }
+                // 그리기 이벤트 핸들러 추가
+                addDrawingListeners(drawCanvas);
 
-                            let minX = x, maxX = x, minY = y, maxY = y;
-                            const queue = [pIdx];
+                // 자동 자르기 실행 (기본 모드)
+                if (currentMode === 'auto') {
+                    // 모든 이미지에 대해 자동 자르기 실행
+                    Array.from(files).forEach(file => {
+                        processAutoCrop(file);
+                    });
+                }
+            };
+            img.src = URL.createObjectURL(firstFile);
+        });
+
+        function processAutoCrop(file) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(img, 0, 0);
+
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+                const width = canvas.width;
+                const height = canvas.height;
+                
+                const visited = new Uint8Array(width * height);
+
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const pIdx = y * width + x;
+                        if (visited[pIdx]) continue;
+
+                        const alpha = data[pIdx * 4 + 3];
+                        if (alpha < 10) {
                             visited[pIdx] = 1;
+                            continue;
+                        }
+
+                        let minX = x, maxX = x, minY = y, maxY = y;
+                        const queue = [pIdx];
+                        visited[pIdx] = 1;
+                        
+                        let area = 0;
+                        let head = 0;
+
+                        while (head < queue.length) {
+                            const curr = queue[head++];
+                            area++;
                             
-                            let area = 0;
-                            let head = 0;
+                            const cx = curr % width;
+                            const cy = Math.floor(curr / width);
 
-                            while (head < queue.length) {
-                                const curr = queue[head++];
-                                area++;
-                                
-                                const cx = curr % width;
-                                const cy = Math.floor(curr / width);
+                            if (cx < minX) minX = cx;
+                            if (cx > maxX) maxX = cx;
+                            if (cy < minY) minY = cy;
+                            if (cy > maxY) maxY = cy;
 
-                                if (cx < minX) minX = cx;
-                                if (cx > maxX) maxX = cx;
-                                if (cy < minY) minY = cy;
-                                if (cy > maxY) maxY = cy;
+                            const neighbors = [curr - width, curr + width, curr - 1, curr + 1];
+                            for (let i = 0; i < 4; i++) {
+                                const n = neighbors[i];
+                                if (n < 0 || n >= width * height) continue;
+                                if (i === 2 && curr % width === 0) continue; 
+                                if (i === 3 && curr % width === width - 1) continue; 
 
-                                const neighbors = [curr - width, curr + width, curr - 1, curr + 1];
-                                for (let i = 0; i < 4; i++) {
-                                    const n = neighbors[i];
-                                    if (n < 0 || n >= width * height) continue;
-                                    if (i === 2 && curr % width === 0) continue; 
-                                    if (i === 3 && curr % width === width - 1) continue; 
-
-                                    if (!visited[n]) {
-                                        visited[n] = 1;
-                                        if (data[n * 4 + 3] >= 10) {
-                                            queue.push(n);
-                                        }
+                                if (!visited[n]) {
+                                    visited[n] = 1;
+                                    if (data[n * 4 + 3] >= 10) {
+                                        queue.push(n);
                                     }
                                 }
                             }
+                        }
 
-                            if (area > 100) {
-                                rects.push({x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1});
-                            }
+                        if (area > 100) {
+                            const rect = {x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1};
+                            autoCropRects.push(rect);
+                            renderAutoCropResult(img, rect);
                         }
                     }
+                }
+            };
+            img.src = URL.createObjectURL(file);
+        }
 
-                    if (rects.length > 0) {
-                        document.getElementById('controlPanel').style.display = 'flex';
-                    }
+        function renderAutoCropResult(img, rect) {
+            globalStickerCount++; 
+            
+            const cropCanvas = document.createElement('canvas');
+            cropCanvas.width = rect.w;
+            cropCanvas.height = rect.h;
+            const cropCtx = cropCanvas.getContext('2d');
+            
+            // 이미지 객체에서 자르기
+            cropCtx.drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
+            const dataUrl = cropCanvas.toDataURL("image/png");
+            
+            const filename = `sticker_auto_${String(globalStickerCount).padStart(3, '0')}.png`;
+            renderCroppedImage(dataUrl, filename);
+        }
 
-                    rects.forEach((rect) => {
-                        globalStickerCount++; // 전체 스티커 개수 증가
-                        
-                        const cropCanvas = document.createElement('canvas');
-                        cropCanvas.width = rect.w;
-                        cropCanvas.height = rect.h;
-                        const cropCtx = cropCanvas.getContext('2d');
-                        
-                        cropCtx.putImageData(ctx.getImageData(rect.x, rect.y, rect.w, rect.h), 0, 0);
-                        const dataUrl = cropCanvas.toDataURL("image/png");
-                        
-                        // 파일명이 001, 002 형식으로 저장되도록 변경 (여러 장 대비 3자리 수)
-                        const filename = `sticker_${String(globalStickerCount).padStart(3, '0')}.png`;
+        function renderAutoCropResults() {
+            // 현재 표시된 이미지에 대한 자동 자르기 결과만 다시 출력
+            const output = document.getElementById('output');
+            output.innerHTML = '';
+            globalStickerCount = 0; // 초기화
 
-                        const card = document.createElement('div');
-                        card.className = 'sticker-card selected'; 
-
-                        const checkbox = document.createElement('input');
-                        checkbox.type = 'checkbox';
-                        checkbox.className = 'sticker-checkbox';
-                        checkbox.checked = true;
-                        checkbox.dataset.filename = filename;
-                        checkbox.dataset.imgData = dataUrl;
-
-                        const resultImg = document.createElement('img');
-                        resultImg.src = dataUrl;
-
-                        card.addEventListener('click', (event) => {
-                            if (event.target !== checkbox) {
-                                checkbox.checked = !checkbox.checked;
-                            }
-                            if (checkbox.checked) {
-                                card.classList.add('selected');
-                            } else {
-                                card.classList.remove('selected');
-                            }
-                        });
-
-                        card.appendChild(checkbox);
-                        card.appendChild(resultImg);
-                        output.appendChild(card);
-                    });
-                };
-                img.src = URL.createObjectURL(file);
+            // 업로드된 모든 이미지에 대해 자동 자르기 다시 실행
+            const files = document.getElementById('uploadInput').files;
+            Array.from(files).forEach(file => {
+                processAutoCrop(file);
             });
-        });
-    </script>
-</body>
-</html>
+        }
+
+        function renderCroppedImage(dataUrl, filename) {
+            const card = document.createElement('div');
+            card.className = 'sticker-card selected'; 
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'sticker-checkbox';
+            checkbox.checked = true;
+            checkbox.dataset.filename = filename;
+            checkbox.dataset.imgData = dataUrl;
+
+            const resultImg = document.createElement('img');
+            resultImg.src = dataUrl;
+
+            card.addEventListener('click
