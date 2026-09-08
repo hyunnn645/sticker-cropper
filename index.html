@@ -3,46 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스티커 자동/수동 정밀 자르기</title>
+    <title>스티커 자동/수동 정밀 자르기 (아이패드 최적화)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body { font-family: -apple-system, sans-serif; background-color: #f5f5f7; padding: 20px; color: #333; }
+        body { font-family: -apple-system, sans-serif; background-color: #f5f5f7; padding: 20px; color: #333; margin: 0; }
         .box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
         input[type="file"] { display: block; margin-top: 10px; padding: 10px; border: 2px dashed #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; }
         
-        #controls { display: none; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
-        button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; background: #e5e5ea; transition: 0.2s; }
+        #controls { display: none; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
+        button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; background: #e5e5ea; transition: 0.2s; font-size: 14px; }
         button.active { background: #333; color: white; }
         .primary { background: #007aff; color: white; }
         .warning { background: #ff3b30; color: white; }
 
-        #workspace { display: none; position: relative; margin-bottom: 20px; overflow: auto; max-width: 100%; border: 1px solid #ccc; background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee); background-size: 16px 16px; background-position: 0 0, 8px 8px; }
-        canvas { display: block; }
-        #overlay { position: absolute; top: 0; left: 0; cursor: crosshair; }
+        /* 수동 자르기 전용 컨트롤 바 */
+        #manualSubControls { display: none; gap: 10px; margin-bottom: 15px; background: #eef1f6; padding: 15px; border-radius: 8px; align-items: center; flex-wrap: wrap; border: 1px solid #d0d7e5; }
+        select { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; font-weight: bold; background: white; }
+
+        /* 아이패드 화면에 맞게 캔버스 자동 조절 */
+        #workspace { 
+            display: none; 
+            position: relative; 
+            width: 100%; 
+            margin-bottom: 20px; 
+            border: 2px solid #ccc; 
+            border-radius: 8px;
+            overflow: hidden; /* 영역 밖으로 튀어나가지 않음 */
+            background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee); 
+            background-size: 16px 16px; 
+            background-position: 0 0, 8px 8px; 
+        }
+        #baseCanvas { width: 100%; height: auto; display: block; }
+        /* 터치 시 스크롤을 막기 위해 기본적으로 touch-action: none 설정 */
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 
         #output { display: flex; flex-wrap: wrap; gap: 15px; }
-        .card { background: white; padding: 10px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid transparent; }
+        .card { background: white; padding: 10px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid transparent; width: 140px; }
         .card.selected { border-color: #007aff; }
-        .card img { max-width: 120px; max-height: 120px; margin-top: 10px; background: #fafafa; border: 1px solid #eee; }
+        .card img { max-width: 120px; max-height: 120px; margin-top: 10px; background: #fafafa; border: 1px solid #eee; object-fit: contain; }
         .card input { cursor: pointer; width: 18px; height: 18px; }
     </style>
 </head>
 <body>
 
     <div class="box">
-        <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기</h2>
-        <p>투명 배경 PNG를 여러 장 올릴 수 있습니다. 덩어리별로 완벽하게 픽셀을 분리합니다.</p>
+        <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기 (아이패드 최적화)</h2>
+        <p>투명 배경 PNG를 여러 장 올리세요. 수동 모드에서는 화면 이동과 자르기 모드를 전환하며 편하게 작업할 수 있습니다.</p>
         <input type="file" id="upload" accept="image/png" multiple>
     </div>
 
     <div id="controls" class="box">
         <button id="btnAuto" class="active">✨ 자동 자르기 모드</button>
         <button id="btnManual">✍️ 수동 자르기 모드</button>
-        <button id="btnCrop" class="warning" style="display:none;">선택 영역 자르기</button>
         <div style="flex-grow: 1;"></div>
         <button id="btnSelectAll">전체 선택</button>
         <button id="btnDeselectAll">전체 해제</button>
         <button id="btnDownload" class="primary">📦 ZIP 다운로드</button>
+    </div>
+
+    <!-- 수동 모드일 때만 나타나는 패널 -->
+    <div id="manualSubControls">
+        <label style="font-weight:bold;">🖼️ 작업할 이미지 선택:</label>
+        <select id="imageSelector"></select>
+        <div style="flex-grow:1; width: 10px;"></div>
+        <button id="btnPanMode">✋ 화면 이동 (스크롤)</button>
+        <button id="btnDrawMode" class="active primary">✂️ 영역 그리기</button>
+        <button id="btnCrop" class="warning">✔️ 선택 영역 자르기</button>
     </div>
 
     <div id="workspace">
@@ -55,9 +81,10 @@
     <script>
         let stickerCount = 0;
         let mode = 'auto'; // 'auto' or 'manual'
-        let currentImg = null;
+        let uploadedFilesData = []; // 업로드된 여러 이미지를 저장하는 배열
         
         // 수동 자르기용 변수
+        let currentImg = null;
         let isDrawing = false;
         let startX = 0, startY = 0, endX = 0, endY = 0;
 
@@ -68,33 +95,219 @@
         const overlay = document.getElementById('overlay');
         const ctxBase = baseCanvas.getContext('2d', { willReadFrequently: true });
         const ctxOverlay = overlay.getContext('2d');
+        const imageSelector = document.getElementById('imageSelector');
 
-        // 파일 업로드 처리
-        upload.addEventListener('change', (e) => {
+        // 1. 파일 업로드 처리
+        upload.addEventListener('change', async (e) => {
             if(!e.target.files.length) return;
             output.innerHTML = '';
             stickerCount = 0;
+            uploadedFilesData = [];
+            imageSelector.innerHTML = '';
             document.getElementById('controls').style.display = 'flex';
 
-            // 모든 파일을 자동 자르기 처리
-            Array.from(e.target.files).forEach((file, index) => {
+            // 비동기 처리로 파일들을 순서대로 읽어서 배열에 저장
+            for (let i = 0; i < e.target.files.length; i++) {
+                const file = e.target.files[i];
                 const img = new Image();
-                img.onload = () => {
-                    // 수동 자르기를 위해 마지막 이미지를 화면에 띄움
-                    if(index === e.target.files.length - 1) {
-                        currentImg = img;
-                        baseCanvas.width = overlay.width = img.width;
-                        baseCanvas.height = overlay.height = img.height;
-                        ctxBase.drawImage(img, 0, 0);
-                        if(mode === 'manual') workspace.style.display = 'inline-block';
-                    }
-                    if(mode === 'auto') processAutoCrop(img);
-                };
                 img.src = URL.createObjectURL(file);
-            });
+                
+                await new Promise(resolve => {
+                    img.onload = () => resolve();
+                });
+
+                uploadedFilesData.push({ name: file.name, img: img });
+
+                // 드롭다운 메뉴에 추가
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.text = `${i+1}. ${file.name}`;
+                imageSelector.appendChild(opt);
+            }
+
+            // 업로드가 끝나면 현재 모드에 따라 실행
+            if (mode === 'auto') {
+                runAutoCropOnAll();
+            } else {
+                loadManualImage(0); // 수동모드면 첫번째 이미지 띄우기
+            }
         });
 
-        // ⭐ 1. 자동 정밀 자르기 (다른 개체 픽셀 제외 로직 적용)
+        // 2. 여러 장 이미지 자동 자르기 실행 함수
+        function runAutoCropOnAll() {
+            output.innerHTML = '';
+            stickerCount = 0;
+            uploadedFilesData.forEach(fileData => {
+                processAutoCrop(fileData.img);
+            });
+        }
+
+        // 3. 수동 자르기용 이미지 캔버스에 로드
+        function loadManualImage(index) {
+            if (!uploadedFilesData[index]) return;
+            currentImg = uploadedFilesData[index].img;
+            
+            // 실제 이미지 픽셀 크기로 캔버스 해상도 맞춤 (화면 표시는 CSS 100%가 알아서 조절)
+            baseCanvas.width = overlay.width = currentImg.width;
+            baseCanvas.height = overlay.height = currentImg.height;
+            
+            ctxBase.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
+            ctxBase.drawImage(currentImg, 0, 0);
+            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+            
+            startX = endX = startY = endY = 0;
+        }
+
+        // 드롭다운에서 다른 이미지 선택 시
+        imageSelector.addEventListener('change', (e) => {
+            loadManualImage(e.target.value);
+        });
+
+        // ⭐ 아이패드 스크롤/그리기 모드 전환
+        document.getElementById('btnPanMode').addEventListener('click', function() {
+            this.classList.add('active', 'primary');
+            document.getElementById('btnDrawMode').classList.remove('active', 'primary');
+            // pointerEvents를 none으로 하면 오버레이가 터치를 무시하고 사파리 기본 스크롤이 작동함
+            overlay.style.pointerEvents = 'none'; 
+        });
+
+        document.getElementById('btnDrawMode').addEventListener('click', function() {
+            this.classList.add('active', 'primary');
+            document.getElementById('btnPanMode').classList.remove('active', 'primary');
+            // 다시 터치를 활성화하여 영역을 그릴 수 있게 함
+            overlay.style.pointerEvents = 'auto'; 
+        });
+
+        // 4. 모드 변경 (자동 <-> 수동)
+        document.getElementById('btnAuto').addEventListener('click', function() {
+            mode = 'auto';
+            this.classList.add('active');
+            document.getElementById('btnManual').classList.remove('active');
+            document.getElementById('manualSubControls').style.display = 'none';
+            workspace.style.display = 'none';
+            runAutoCropOnAll();
+        });
+
+        document.getElementById('btnManual').addEventListener('click', function() {
+            mode = 'manual';
+            this.classList.add('active');
+            document.getElementById('btnAuto').classList.remove('active');
+            document.getElementById('manualSubControls').style.display = 'flex';
+            workspace.style.display = 'block';
+            
+            output.innerHTML = '';
+            stickerCount = 0;
+            if (uploadedFilesData.length > 0) {
+                loadManualImage(imageSelector.value);
+                // 기본으로 그리기 모드 활성화
+                document.getElementById('btnDrawMode').click();
+            }
+        });
+
+        // ⭐ 5. 수동 자르기 캔버스 좌표 계산 (화면 줌/축소 완벽 대응)
+        function getPos(e) {
+            const rect = overlay.getBoundingClientRect();
+            let clientX = e.clientX, clientY = e.clientY;
+            if(e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            }
+            // CSS로 축소된 캔버스 크기 비율을 계산하여 실제 픽셀 위치를 정확히 추적
+            const scaleX = overlay.width / rect.width;
+            const scaleY = overlay.height / rect.height;
+            
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function startDraw(e) {
+            if(mode !== 'manual') return;
+            e.preventDefault(); // 스크롤 방지
+            isDrawing = true;
+            const pos = getPos(e);
+            startX = pos.x; startY = pos.y;
+        }
+
+        function draw(e) {
+            if(!isDrawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            endX = pos.x; endY = pos.y;
+            
+            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+            ctxOverlay.fillStyle = "rgba(0, 122, 255, 0.3)";
+            ctxOverlay.strokeStyle = "#007aff";
+            ctxOverlay.lineWidth = Math.max(2, overlay.width / 500); // 해상도 비례 선 굵기
+            
+            const w = endX - startX;
+            const h = endY - startY;
+            ctxOverlay.fillRect(startX, startY, w, h);
+            ctxOverlay.strokeRect(startX, startY, w, h);
+        }
+
+        function endDraw(e) {
+            if(!isDrawing) return;
+            isDrawing = false;
+        }
+
+        overlay.addEventListener('mousedown', startDraw);
+        overlay.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', endDraw);
+        overlay.addEventListener('touchstart', startDraw, {passive: false});
+        overlay.addEventListener('touchmove', draw, {passive: false});
+        window.addEventListener('touchend', endDraw);
+
+        // 수동 선택 영역 자르기 버튼 클릭 시
+        document.getElementById('btnCrop').addEventListener('click', () => {
+            const x = Math.min(startX, endX);
+            const y = Math.min(startY, endY);
+            const w = Math.abs(endX - startX);
+            const h = Math.abs(endY - startY);
+            
+            if(w < 10 || h < 10) return alert("자를 영역을 먼저 네모나게 드래그 해주세요!");
+
+            const resultCanvas = document.createElement('canvas');
+            resultCanvas.width = w; resultCanvas.height = h;
+            resultCanvas.getContext('2d').putImageData(ctxBase.getImageData(x, y, w, h), 0, 0);
+            
+            addResultCard(resultCanvas.toDataURL('image/png'));
+            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+            startX = endX = startY = endY = 0;
+        });
+
+        // 6. 결과 카드 화면에 추가
+        function addResultCard(dataUrl) {
+            stickerCount++;
+            const filename = `sticker_${String(stickerCount).padStart(3, '0')}.png`;
+            
+            const card = document.createElement('div');
+            card.className = 'card selected';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = true;
+            checkbox.dataset.filename = filename;
+            checkbox.dataset.dataurl = dataUrl;
+            
+            const img = document.createElement('img');
+            img.src = dataUrl;
+
+            card.addEventListener('click', (e) => {
+                if(e.target !== checkbox) checkbox.checked = !checkbox.checked;
+                card.classList.toggle('selected', checkbox.checked);
+            });
+
+            card.appendChild(checkbox);
+            card.appendChild(img);
+            output.appendChild(card); // 새로운 카드를 맨 뒤에 추가
+            
+            // 모바일에서 스크롤이 자동으로 아래로 가게 배려
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        // 7. 자동 자르기 핵심 로직 (정밀 분리)
         function processAutoCrop(img) {
             const tempC = document.createElement('canvas');
             tempC.width = img.width; tempC.height = img.height;
@@ -118,7 +331,6 @@
                     let head = 0;
                     let minX = x, maxX = x, minY = y, maxY = y;
 
-                    // BFS 탐색
                     while (head < queue.length) {
                         const curr = queue[head++];
                         const cx = curr % w;
@@ -143,27 +355,19 @@
                         }
                     }
 
-                    // 100픽셀 이상인 덩어리만 추출
                     if (queue.length > 100) {
                         const rectW = maxX - minX + 1;
                         const rectH = maxY - minY + 1;
                         
-                        // 새 캔버스를 만들고 "해당 덩어리에 속한 픽셀만" 복사 (다른 개체 배제)
                         const cropData = new ImageData(rectW, rectH);
                         for(let i=0; i<queue.length; i++) {
                             const qIdx = queue[i];
-                            const qx = qIdx % w;
-                            const qy = Math.floor(qIdx / w);
-                            
-                            const localX = qx - minX;
-                            const localY = qy - minY;
-                            const localIdx = (localY * rectW + localX) * 4;
+                            const localIdx = ((Math.floor(qIdx / w) - minY) * rectW + (qIdx % w - minX)) * 4;
                             const origIdx = qIdx * 4;
-                            
                             cropData.data[localIdx] = data[origIdx];
                             cropData.data[localIdx+1] = data[origIdx+1];
                             cropData.data[localIdx+2] = data[origIdx+2];
-                            cropData.data[localIdx+3] = data[origIdx+3]; // 투명도 유지
+                            cropData.data[localIdx+3] = data[origIdx+3];
                         }
                         
                         const resultCanvas = document.createElement('canvas');
@@ -176,134 +380,7 @@
             }
         }
 
-        // ⭐ 2. 수동 자르기 (드래그 이벤트)
-        function getPos(e) {
-            const rect = overlay.getBoundingClientRect();
-            let clientX = e.clientX, clientY = e.clientY;
-            if(e.touches && e.touches.length > 0) {
-                clientX = e.touches[0].clientX;
-                clientY = e.touches[0].clientY;
-            }
-            return {
-                x: (clientX - rect.left) * (overlay.width / rect.width),
-                y: (clientY - rect.top) * (overlay.height / rect.height)
-            };
-        }
-
-        function startDraw(e) {
-            if(mode !== 'manual') return;
-            e.preventDefault();
-            isDrawing = true;
-            const pos = getPos(e);
-            startX = pos.x; startY = pos.y;
-        }
-
-        function draw(e) {
-            if(!isDrawing) return;
-            e.preventDefault();
-            const pos = getPos(e);
-            endX = pos.x; endY = pos.y;
-            
-            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
-            ctxOverlay.fillStyle = "rgba(0, 122, 255, 0.3)";
-            ctxOverlay.strokeStyle = "#007aff";
-            ctxOverlay.lineWidth = 2;
-            
-            const w = endX - startX;
-            const h = endY - startY;
-            ctxOverlay.fillRect(startX, startY, w, h);
-            ctxOverlay.strokeRect(startX, startY, w, h);
-        }
-
-        function endDraw(e) {
-            if(!isDrawing) return;
-            isDrawing = false;
-        }
-
-        overlay.addEventListener('mousedown', startDraw);
-        overlay.addEventListener('mousemove', draw);
-        window.addEventListener('mouseup', endDraw);
-        overlay.addEventListener('touchstart', startDraw, {passive: false});
-        overlay.addEventListener('touchmove', draw, {passive: false});
-        window.addEventListener('touchend', endDraw);
-
-        // 수동 자르기 버튼 클릭 시
-        document.getElementById('btnCrop').addEventListener('click', () => {
-            const x = Math.min(startX, endX);
-            const y = Math.min(startY, endY);
-            const w = Math.abs(endX - startX);
-            const h = Math.abs(endY - startY);
-            
-            if(w < 10 || h < 10) return alert("자를 영역을 드래그 해주세요!");
-
-            const resultCanvas = document.createElement('canvas');
-            resultCanvas.width = w; resultCanvas.height = h;
-            resultCanvas.getContext('2d').putImageData(ctxBase.getImageData(x, y, w, h), 0, 0);
-            
-            addResultCard(resultCanvas.toDataURL('image/png'));
-            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
-            startX = endX = startY = endY = 0;
-        });
-
-        // 결과 카드 추가 함수
-        function addResultCard(dataUrl) {
-            stickerCount++;
-            const filename = `sticker_${String(stickerCount).padStart(3, '0')}.png`;
-            
-            const card = document.createElement('div');
-            card.className = 'card selected';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = true;
-            checkbox.dataset.filename = filename;
-            checkbox.dataset.dataurl = dataUrl;
-            
-            const img = document.createElement('img');
-            img.src = dataUrl;
-
-            card.addEventListener('click', (e) => {
-                if(e.target !== checkbox) checkbox.checked = !checkbox.checked;
-                card.classList.toggle('selected', checkbox.checked);
-            });
-
-            card.appendChild(checkbox);
-            card.appendChild(img);
-            output.appendChild(card);
-        }
-
-        // 모드 변경 버튼 이벤트
-        document.getElementById('btnAuto').addEventListener('click', function() {
-            mode = 'auto';
-            this.classList.add('active');
-            document.getElementById('btnManual').classList.remove('active');
-            document.getElementById('btnCrop').style.display = 'none';
-            workspace.style.display = 'none';
-            
-            // 기존 결과 지우고 오토 크롭 재실행
-            output.innerHTML = '';
-            stickerCount = 0;
-            const files = upload.files;
-            Array.from(files).forEach(file => {
-                const img = new Image();
-                img.onload = () => processAutoCrop(img);
-                img.src = URL.createObjectURL(file);
-            });
-        });
-
-        document.getElementById('btnManual').addEventListener('click', function() {
-            mode = 'manual';
-            this.classList.add('active');
-            document.getElementById('btnAuto').classList.remove('active');
-            document.getElementById('btnCrop').style.display = 'inline-block';
-            workspace.style.display = 'inline-block';
-            
-            output.innerHTML = '';
-            stickerCount = 0;
-            if(!currentImg) alert("이미지를 다시 업로드해주세요.");
-        });
-
-        // 전체 선택 / 해제 / ZIP 다운로드
+        // 전체 선택 / 해제 / ZIP 다운로드 이벤트
         document.getElementById('btnSelectAll').addEventListener('click', () => {
             document.querySelectorAll('.card').forEach(c => { c.classList.add('selected'); c.querySelector('input').checked = true; });
         });
@@ -313,11 +390,11 @@
         
         document.getElementById('btnDownload').addEventListener('click', () => {
             const checked = document.querySelectorAll('.card input:checked');
-            if(!checked.length) return alert('선택된 이미지가 없습니다.');
+            if(!checked.length) return alert('다운로드할 스티커를 선택해주세요.');
             
             const btn = document.getElementById('btnDownload');
             const originalText = btn.innerHTML;
-            btn.innerHTML = '⏳ 압축 중...';
+            btn.innerHTML = '⏳ ZIP 압축 중...';
             
             const zip = new JSZip();
             checked.forEach(cb => {
