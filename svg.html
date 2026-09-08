@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2단계: SVG로 변환하기 (개별 패스 수 조절)</title>
+    <title>2단계: SVG로 변환하기 (고화질 원본 유지)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
     <style>
@@ -18,7 +18,6 @@
         #controls { display: none; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
         button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; background: #e5e5ea; font-size: 14px; }
         .success { background: #34c759; color: white; }
-        .primary { background: #007aff; color: white; }
 
         #output { display: flex; flex-wrap: wrap; gap: 15px; }
         .card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; border: 2px solid transparent; width: 170px; position: relative; }
@@ -33,36 +32,6 @@
         .preview-box svg { max-width: 100%; max-height: 100%; }
         .card input[type="checkbox"] { cursor: pointer; width: 18px; height: 18px; align-self: flex-start; }
         .filename { font-size: 11px; color: #666; margin-bottom: 5px; word-break: break-all; text-align: center; font-weight: bold; }
-        
-        /* 개별 패스 조절 컨트롤 디자인 */
-        .setting-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            width: 100%;
-            font-size: 12px;
-            margin-top: 5px;
-            background: #f8f9fa;
-            padding: 4px 6px;
-            border-radius: 6px;
-        }
-        .setting-row input[type="number"] {
-            width: 45px;
-            padding: 2px;
-            text-align: center;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-        .reconvert-btn {
-            margin-top: 8px;
-            width: 100%;
-            background: #5856d6;
-            color: white;
-            padding: 6px;
-            font-size: 12px;
-            border-radius: 6px;
-        }
         #loading { display: none; font-weight: bold; color: #007aff; margin-bottom: 15px; }
     </style>
 </head>
@@ -74,8 +43,8 @@
     </div>
 
     <div class="box">
-        <h2 style="margin-top:0;">✨ 투명 PNG 스티커를 SVG로 변환 (패스 수 개별 제어)</h2>
-        <p>각 스티커마다 필요한 <strong>패스(색상 조각) 개수</strong>를 직접 입력하고 변환할 수 있습니다. (값이 낮을수록 쭈글거림 없이 매끄러워집니다)</p>
+        <h2 style="margin-top:0;">✨ 투명 PNG 스티커를 SVG로 변환 (원본 그림 유지)</h2>
+        <p>외곽 실루엣은 완벽한 벡터 라인으로 따고, 내부는 <strong>원본 그림과 색상을 100% 그대로 보존</strong>하는 방식으로 변환합니다.</p>
         <input type="file" id="upload" accept="image/png" multiple>
     </div>
 
@@ -91,13 +60,6 @@
     <div id="output"></div>
 
     <script>
-        let rawStickers = []; // 원본 이미지 데이터 보관용
-
-        const upload = document.getElementById('upload');
-        const output = document.getElementById('output');
-        const controls = document.getElementById('controls');
-        const loading = document.getElementById('loading');
-
         window.addEventListener('DOMContentLoaded', () => {
             const savedData = localStorage.getItem('stickersToSvg');
             if (savedData) {
@@ -111,7 +73,7 @@
             }
         });
 
-        upload.addEventListener('change', async (e) => {
+        document.getElementById('upload').addEventListener('change', async (e) => {
             const files = e.target.files;
             if (!files.length) return;
             const stickers = [];
@@ -127,125 +89,105 @@
             loadStickers(stickers);
         });
 
-        // 1단계: 스티커들을 목록에 올리고 초기 카드 생성 (기본 패스 수는 4로 설정하여 쭈글거림 방지)
         async function loadStickers(stickers) {
             output.innerHTML = '';
-            rawStickers = stickers;
             controls.style.display = 'flex';
             loading.style.display = 'block';
 
             for (let i = 0; i < stickers.length; i++) {
-                await createCardWithSvg(stickers[i], i, 4); // 기본 색상/패스 수 4개 (깔끔함 유지)
+                await createCardWithSvg(stickers[i]);
             }
             loading.style.display = 'none';
         }
 
-        // 2단계: 지정된 패스 수(colors)로 SVG 변환 수행
-        function convertToSvg(dataUrl, colors) {
+        function createCardWithSvg(sticker) {
             return new Promise((resolve) => {
-                const options = {
-                    ltres: 1, 
-                    qtres: 1, 
-                    pathomit: 12, // 작은 노이즈 점 무시
-                    colorsampling: 2, 
-                    numberofcolors: parseInt(colors) || 4, // 사용자가 입력한 패스 수
-                    mincolorratio: 0.02, 
-                    blurradius: 0, 
-                    blurdelta: 20
+                const img = new Image();
+                img.onload = function() {
+                    const w = img.width;
+                    const h = img.height;
+
+                    // 실루엣 외곽선만 정밀하게 따기 위한 옵션 (단색 추출)
+                    const options = {
+                        ltres: 1, 
+                        qtres: 1, 
+                        pathomit: 20,
+                        colorsampling: 0, 
+                        numberofcolors: 2, 
+                        blurradius: 0, 
+                        blurdelta: 20
+                    };
+
+                    ImageTracer.imageToSVG(sticker.dataUrl, function(svgstr) {
+                        const baseName = sticker.name.substring(0, sticker.name.lastIndexOf('.')) || sticker.name;
+                        const svgFilename = `${baseName}.svg`;
+
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(svgstr, "image/svg+xml");
+                        const paths = doc.querySelectorAll('path');
+                        
+                        let combinedPaths = '';
+                        paths.forEach(p => {
+                            combinedPaths += `<path d="${p.getAttribute('d')}" fill="${p.getAttribute('fill') || '#fff'}"/>`;
+                        });
+
+                        if(!combinedPaths) {
+                            combinedPaths = `<rect width="${w}" height="${h}" fill="#fff"/>`;
+                        }
+
+                        // 외곽선 패스 안쪽에 원본 PNG 이미지를 그대로 품는 하이브리드 SVG 구조
+                        const cleanSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
+    <defs>
+        <clipPath id="clip">
+            ${combinedPaths}
+        </clipPath>
+    </defs>
+    <!-- 외곽 실루엣 백그라운드 -->
+    <g>
+        ${combinedPaths}
+    </g>
+    <!-- 원본 그림 및 색상을 100% 그대로 유지하는 고화질 이미지 임베드 -->
+    <image width="${w}" height="${h}" xlink:href="${sticker.dataUrl}" clip-path="url(#clip)"/>
+</svg>`;
+
+                        const card = document.createElement('div');
+                        card.className = 'card selected';
+
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.checked = true;
+                        checkbox.dataset.filename = svgFilename;
+                        checkbox.dataset.svgString = cleanSvgStr;
+
+                        const nameDiv = document.createElement('div');
+                        nameDiv.className = 'filename';
+                        nameDiv.textContent = svgFilename;
+
+                        const previewBox = document.createElement('div');
+                        previewBox.className = 'preview-box';
+                        
+                        const newDoc = parser.parseFromString(cleanSvgStr, "image/svg+xml");
+                        const newSvgEl = newDoc.documentElement;
+                        newSvgEl.removeAttribute('width'); 
+                        newSvgEl.removeAttribute('height');
+                        newSvgEl.setAttribute('width', '100%'); 
+                        newSvgEl.setAttribute('height', '100%');
+                        previewBox.appendChild(newSvgEl);
+
+                        card.addEventListener('click', (e) => {
+                            if (e.target !== checkbox) checkbox.checked = !checkbox.checked;
+                            card.classList.toggle('selected', checkbox.checked);
+                        });
+
+                        card.appendChild(checkbox);
+                        card.appendChild(nameDiv);
+                        card.appendChild(previewBox);
+                        output.appendChild(card);
+                        resolve();
+                    }, options);
                 };
-
-                ImageTracer.imageToSVG(dataUrl, function(svgstr) {
-                    resolve(svgstr);
-                }, options);
+                img.src = sticker.dataUrl;
             });
-        }
-
-        async function createCardWithSvg(sticker, index, colorCount) {
-            const svgString = await convertToSvg(sticker.dataUrl, colorCount);
-            
-            const baseName = sticker.name.substring(0, sticker.name.lastIndexOf('.')) || sticker.name;
-            const svgFilename = `${baseName}.svg`;
-
-            const card = document.createElement('div');
-            card.className = 'card selected';
-            card.dataset.index = index;
-
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = true;
-            checkbox.dataset.filename = svgFilename;
-            checkbox.dataset.svgString = svgString;
-
-            const nameDiv = document.createElement('div');
-            nameDiv.className = 'filename';
-            nameDiv.textContent = svgFilename;
-
-            const previewBox = document.createElement('div');
-            previewBox.className = 'preview-box';
-            
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(svgString, "image/svg+xml");
-            const svgElement = doc.documentElement;
-            svgElement.removeAttribute('width');
-            svgElement.removeAttribute('height');
-            svgElement.setAttribute('width', '100%');
-            svgElement.setAttribute('height', '100%');
-            previewBox.innerHTML = '';
-            previewBox.appendChild(svgElement);
-
-            // 개별 패스 수 조절 UI
-            const settingRow = document.createElement('div');
-            settingRow.className = 'setting-row';
-            settingRow.innerHTML = `<span>패스(색상) 수:</span>`;
-            
-            const numInput = document.createElement('input');
-            numInput.type = 'number';
-            numInput.min = '2';
-            numInput.max = '32';
-            numInput.value = colorCount;
-            settingRow.appendChild(numInput);
-
-            // 재변환 버튼 (숫자 바꾼 후 누르면 즉시 적용)
-            const reconvertBtn = document.createElement('button');
-            reconvertBtn.className = 'reconvert-btn';
-            reconvertBtn.textContent = '🔄 적용하기';
-            reconvertBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                reconvertBtn.textContent = '변환중...';
-                const newColors = numInput.value;
-                const newSvgStr = await convertToSvg(sticker.dataUrl, newColors);
-                
-                // SVG 미리보기 및 체크박스 데이터 업데이트
-                checkbox.dataset.svgString = newSvgStr;
-                const newDoc = parser.parseFromString(newSvgStr, "image/svg+xml");
-                const newSvgEl = newDoc.documentElement;
-                newSvgEl.removeAttribute('width'); newSvgEl.removeAttribute('height');
-                newSvgEl.setAttribute('width', '100%'); newSvgEl.setAttribute('height', '100%');
-                previewBox.innerHTML = '';
-                previewBox.appendChild(newSvgEl);
-                reconvertBtn.textContent = '🔄 적용하기';
-            });
-
-            card.addEventListener('click', (e) => {
-                if (e.target !== checkbox && e.target !== numInput && e.target !== reconvertBtn) {
-                    checkbox.checked = !checkbox.checked;
-                }
-                card.classList.toggle('selected', checkbox.checked);
-            });
-
-            card.appendChild(checkbox);
-            card.appendChild(nameDiv);
-            card.appendChild(previewBox);
-            card.appendChild(settingRow);
-            card.appendChild(reconvertBtn);
-
-            // 기존에 있던 카드라면 교체, 아니면 추가
-            const existingCard = output.querySelector(`.card[data-index="${index}"]`);
-            if (existingCard) {
-                output.replaceChild(card, existingCard);
-            } else {
-                output.appendChild(card);
-            }
         }
 
         document.getElementById('btnSelectAll').addEventListener('click', () => {
