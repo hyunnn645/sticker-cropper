@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스티커 자동 자르기 (여백 0)</title>
+    <title>스티커 자동 자르기 (여백 0 & ZIP 다운)</title>
+    <!-- ZIP 파일 생성을 위한 JSZip 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -28,6 +30,37 @@
             width: 100%;
             box-sizing: border-box;
         }
+        
+        /* 컨트롤 패널 (버튼 모음) */
+        #controlPanel {
+            display: none;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            background-color: #e5e5ea;
+            color: #333;
+            transition: background-color 0.2s;
+        }
+        button:active { background-color: #d1d1d6; }
+        .primary-btn {
+            background-color: #007aff;
+            color: white;
+        }
+        .primary-btn:active { background-color: #0056b3; }
+
+        /* 결과 출력 영역 */
         #output {
             display: flex;
             flex-wrap: wrap;
@@ -42,12 +75,19 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            position: relative;
+            cursor: pointer;
         }
-        /* 투명 배경 확인용 체크무늬 */
+        /* 체크박스 스타일 */
+        .sticker-card input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
         .sticker-card img {
             max-width: 150px;
             max-height: 150px;
-            margin-bottom: 12px;
             background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), 
                               linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee);
             background-size: 16px 16px;
@@ -55,14 +95,10 @@
             border: 1px solid #e5e5e5;
             border-radius: 4px;
         }
-        .download-btn {
-            background-color: #007aff;
-            color: white;
-            text-decoration: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
+        /* 카드 선택 시 시각적 효과 */
+        .sticker-card.selected {
+            border: 2px solid #007aff;
+            padding: 10px;
         }
     </style>
 </head>
@@ -70,21 +106,69 @@
 
     <div class="upload-box">
         <h2>✂️ 스티커 자동 분리 도구</h2>
-        <p>프로크리에이트에서 <strong>배경을 투명하게 설정하여 저장한 PNG 파일</strong>을 업로드하세요. 여백 없이 딱 맞게 잘라줍니다.<br>
-        (아이패드에서는 이미지를 길게 눌러 사진 앱에 직접 저장할 수 있습니다.)</p>
+        <p>프로크리에이트에서 <strong>배경을 투명하게 설정하여 저장한 PNG 파일</strong>을 업로드하세요.</p>
         <input type="file" id="uploadInput" accept="image/png">
+    </div>
+
+    <!-- 컨트롤 패널 -->
+    <div id="controlPanel">
+        <button id="selectAllBtn">전체 선택</button>
+        <button id="deselectAllBtn">전체 해제</button>
+        <button id="downloadZipBtn" class="primary-btn">선택한 이미지 ZIP 다운로드</button>
     </div>
 
     <div id="output"></div>
 
     <script>
+        // 버튼 이벤트 리스너 설정
+        document.getElementById('selectAllBtn').addEventListener('click', () => {
+            document.querySelectorAll('.sticker-checkbox').forEach(cb => {
+                cb.checked = true;
+                cb.parentElement.classList.add('selected');
+            });
+        });
+
+        document.getElementById('deselectAllBtn').addEventListener('click', () => {
+            document.querySelectorAll('.sticker-checkbox').forEach(cb => {
+                cb.checked = false;
+                cb.parentElement.classList.remove('selected');
+            });
+        });
+
+        document.getElementById('downloadZipBtn').addEventListener('click', () => {
+            const checkedBoxes = document.querySelectorAll('.sticker-checkbox:checked');
+            if (checkedBoxes.length === 0) {
+                alert('다운로드할 스티커를 선택해주세요.');
+                return;
+            }
+
+            const zip = new JSZip();
+            const originalBtnText = document.getElementById('downloadZipBtn').textContent;
+            document.getElementById('downloadZipBtn').textContent = 'ZIP 생성 중...';
+
+            checkedBoxes.forEach(cb => {
+                const filename = cb.dataset.filename;
+                // Base64 데이터에서 헤더(data:image/png;base64,) 부분을 제거하고 실제 데이터만 추출
+                const base64Data = cb.dataset.imgData.split(',')[1]; 
+                zip.file(filename, base64Data, {base64: true});
+            });
+
+            zip.generateAsync({type: "blob"}).then(function(content) {
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = "stickers.zip";
+                link.click();
+                document.getElementById('downloadZipBtn').textContent = originalBtnText;
+            });
+        });
+
+        // 이미지 업로드 및 분리 처리
         document.getElementById('uploadInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
 
             const img = new Image();
             img.onload = function() {
-                // 원본 이미지를 그릴 캔버스 생성
                 const canvas = document.createElement('canvas');
                 canvas.width = img.width;
                 canvas.height = img.height;
@@ -96,30 +180,26 @@
                 const width = canvas.width;
                 const height = canvas.height;
                 
-                // 픽셀 방문 여부 체크 배열
                 const visited = new Uint8Array(width * height);
-                const rects = []; // 잘라낼 사각형 좌표들
+                const rects = [];
 
-                // 픽셀 단위로 스티커 덩어리 찾기 (BFS 알고리즘)
                 for (let y = 0; y < height; y++) {
                     for (let x = 0; x < width; x++) {
                         const pIdx = y * width + x;
                         if (visited[pIdx]) continue;
 
                         const alpha = data[pIdx * 4 + 3];
-                        // 투명한 픽셀(알파값 10 미만)은 배경으로 간주하고 건너뜀
                         if (alpha < 10) {
                             visited[pIdx] = 1;
                             continue;
                         }
 
-                        // 새로운 스티커 픽셀 발견 시 연결된 영역 탐색
                         let minX = x, maxX = x, minY = y, maxY = y;
                         const queue = [pIdx];
                         visited[pIdx] = 1;
                         
                         let area = 0;
-                        let head = 0; // 큐 성능 최적화를 위한 포인터
+                        let head = 0;
 
                         while (head < queue.length) {
                             const curr = queue[head++];
@@ -128,25 +208,20 @@
                             const cx = curr % width;
                             const cy = Math.floor(curr / width);
 
-                            // Bounding Box (여백 0 사각형) 좌표 갱신
                             if (cx < minX) minX = cx;
                             if (cx > maxX) maxX = cx;
                             if (cy < minY) minY = cy;
                             if (cy > maxY) maxY = cy;
 
-                            // 상하좌우 픽셀 확인
                             const neighbors = [curr - width, curr + width, curr - 1, curr + 1];
                             for (let i = 0; i < 4; i++) {
                                 const n = neighbors[i];
-                                // 캔버스 범위 이탈 방지
                                 if (n < 0 || n >= width * height) continue;
-                                // 좌우 가장자리 픽셀 이탈 방지
                                 if (i === 2 && curr % width === 0) continue; 
                                 if (i === 3 && curr % width === width - 1) continue; 
 
                                 if (!visited[n]) {
                                     visited[n] = 1;
-                                    // 불투명한 픽셀이면 큐에 추가하여 탐색 이어나감
                                     if (data[n * 4 + 3] >= 10) {
                                         queue.push(n);
                                     }
@@ -154,43 +229,58 @@
                             }
                         }
 
-                        // 노이즈(먼지) 제외: 100픽셀 이상인 덩어리만 저장
                         if (area > 100) {
                             rects.push({x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1});
                         }
                     }
                 }
 
-                // 결과물 화면에 출력
                 const output = document.getElementById('output');
-                output.innerHTML = ''; // 기존 화면 초기화
+                output.innerHTML = '';
                 
+                // 스티커가 1개 이상 분리되었으면 컨트롤 패널 표시
+                if (rects.length > 0) {
+                    document.getElementById('controlPanel').style.display = 'flex';
+                }
+
                 rects.forEach((rect, index) => {
                     const cropCanvas = document.createElement('canvas');
                     cropCanvas.width = rect.w;
                     cropCanvas.height = rect.h;
                     const cropCtx = cropCanvas.getContext('2d');
                     
-                    // 원본에서 딱 맞는 사각형(여백 0)만큼 복사
                     cropCtx.putImageData(ctx.getImageData(rect.x, rect.y, rect.w, rect.h), 0, 0);
-
                     const dataUrl = cropCanvas.toDataURL("image/png");
+                    const filename = `sticker_${String(index + 1).padStart(2, '0')}.png`;
 
-                    // UI 요소 생성
                     const card = document.createElement('div');
-                    card.className = 'sticker-card';
+                    card.className = 'sticker-card selected'; // 기본적으로 선택된 상태
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'sticker-checkbox';
+                    checkbox.checked = true; // 기본 체크
+                    checkbox.dataset.filename = filename;
+                    checkbox.dataset.imgData = dataUrl;
 
                     const resultImg = document.createElement('img');
                     resultImg.src = dataUrl;
 
-                    const downloadBtn = document.createElement('a');
-                    downloadBtn.href = dataUrl;
-                    downloadBtn.download = `sticker_${String(index + 1).padStart(2, '0')}.png`;
-                    downloadBtn.textContent = '저장하기';
-                    downloadBtn.className = 'download-btn';
+                    // 카드(이미지나 여백) 클릭 시 체크박스 토글 기능
+                    card.addEventListener('click', (event) => {
+                        // 체크박스 자체를 직접 클릭했을 때는 중복 실행 방지
+                        if (event.target !== checkbox) {
+                            checkbox.checked = !checkbox.checked;
+                        }
+                        if (checkbox.checked) {
+                            card.classList.add('selected');
+                        } else {
+                            card.classList.remove('selected');
+                        }
+                    });
 
+                    card.appendChild(checkbox);
                     card.appendChild(resultImg);
-                    card.appendChild(downloadBtn);
                     output.appendChild(card);
                 });
             };
