@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2단계: SVG로 변환하기</title>
+    <title>2단계: SVG로 변환하기 (고화질 유지)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
     <style>
@@ -44,7 +44,7 @@
 
     <div class="box">
         <h2 style="margin-top:0;">✨ 투명 PNG 스티커를 SVG로 변환</h2>
-        <p>1단계에서 보낸 이미지들이 자동으로 등록됩니다. (또는 직접 PNG 파일을 추가로 업로드할 수도 있습니다)</p>
+        <p>내부 질감이 쭈글쭈글해지지 않도록, <strong>외곽 외곽선은 벡터로 따고 내부는 고화질 원본을 살리는 방식</strong>으로 변환합니다.</p>
         <input type="file" id="upload" accept="image/png" multiple>
     </div>
 
@@ -53,7 +53,7 @@
     <div id="controls" class="box">
         <button id="btnSelectAll">전체 선택</button>
         <button id="btnDeselectAll">전체 해제</button>
-        <div style="flex-grow: 1;"></div>
+        <div style="flex-grow: 1; min-width: 10px;"></div>
         <button id="btnDownloadZip" class="success">📦 선택한 SVG 일괄 ZIP 다운</button>
     </div>
 
@@ -67,28 +67,22 @@
         const progressSpan = document.getElementById('progress');
         const totalSpan = document.getElementById('total');
 
-        // 페이지가 열릴 때 1단계에서 보낸 데이터가 있는지 확인
         window.addEventListener('DOMContentLoaded', () => {
             const savedData = localStorage.getItem('stickersToSvg');
             if (savedData) {
                 try {
                     const stickers = JSON.parse(savedData);
                     if (stickers.length > 0) {
-                        // 일회성 읽기 후 로컬스토리지 비우기 (새로고침 시 중복 로드 방지)
                         localStorage.removeItem('stickersToSvg');
                         processStickers(stickers);
                     }
-                } catch (e) {
-                    console.error("데이터를 불러오는 중 오류가 발생했습니다.", e);
-                }
+                } catch (e) { console.error(e); }
             }
         });
 
-        // 직접 파일 추가로 업로드했을 때
         upload.addEventListener('change', async (e) => {
             const files = e.target.files;
             if (!files.length) return;
-
             const stickers = [];
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
@@ -102,36 +96,73 @@
             processStickers(stickers);
         });
 
-        // 공통 SVG 변환 처리 함수
         async function processStickers(stickers) {
             controls.style.display = 'none';
             loading.style.display = 'block';
             totalSpan.textContent = stickers.length;
             progressSpan.textContent = '0';
-
             let convertedCount = 0;
 
             for (let i = 0; i < stickers.length; i++) {
                 const sticker = stickers[i];
 
                 await new Promise((resolve) => {
-                    const options = {
-                        ltres: 1, qtres: 1, pathomit: 8,
-                        colorsampling: 2, numberofcolors: 16,
-                        mincolorratio: 0.02, blurradius: 0, blurdelta: 20
+                    const img = new Image();
+                    img.onload = function() {
+                        const w = img.width;
+                        const h = img.height;
+
+                        // 1단계: 실루엣 외곽선만 아주 부드럽게 벡터로 추출하기 위한 옵션
+                        const options = {
+                            ltres: 2, qtres: 2, pathomit: 50,
+                            colorsampling: 0, numberofcolors: 2, // 단색(실루엣)만 추출
+                            blurradius: 5, blurdelta: 50
+                        };
+
+                        ImageTracer.imageToSVG(sticker.dataUrl, function(svgstr) {
+                            const baseName = sticker.name.substring(0, sticker.name.lastIndexOf('.')) || sticker.name;
+                            const svgFilename = `${baseName}.svg`;
+
+                            // 2단계: 추출된 외곽선 패스 정보를 가져오고, 내부는 원본 고화질 PNG를 그대로 품는 하이브리드 SVG 생성
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(svgstr, "image/svg+xml");
+                            const paths = doc.querySelectorAll('path');
+                            
+                            let combinedPaths = '';
+                            paths.forEach(p => {
+                                combinedPaths += `<path d="${p.getAttribute('d')}" fill="${p.getAttribute('fill') || '#fff'}"/>`;
+                            });
+
+                            // 만약 외곽선 추출이 안됐을 경우를 대비한 안전 장치 포함
+                            if(!combinedPaths) {
+                                combinedPaths = `<rect width="${w}" height="${h}" fill="#fff"/>`;
+                            }
+
+                            // SVG 표준 포맷: 외곽선 영역(클리핑 마스크 혹은 배경 패스) + 원본 고화질 이미지 데이터 임베드
+                            const cleanSvgStr = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
+    <defs>
+        <clipPath id="clip">
+            ${combinedPaths}
+        </clipPath>
+    </defs>
+    <!-- 외곽 실루엣 기반 배경 -->
+    <g>
+        ${combinedPaths}
+    </g>
+    <!-- 원본 질감과 화질을 완벽히 보존하는 고화질 이미지 삽입 -->
+    <image width="${w}" height="${h}" xlink:href="${sticker.dataUrl}" clip-path="url(#clip)"/>
+</svg>`;
+
+                            const svgBlob = new Blob([cleanSvgStr], {type: "image/svg+xml;charset=utf-8"});
+                            const svgUrl = URL.createObjectURL(svgBlob);
+
+                            addResultCard(svgFilename, svgUrl, cleanSvgStr);
+                            convertedCount++;
+                            progressSpan.textContent = convertedCount;
+                            resolve();
+                        }, options);
                     };
-
-                    ImageTracer.imageToSVG(sticker.dataUrl, function(svgstr) {
-                        const baseName = sticker.name.substring(0, sticker.name.lastIndexOf('.')) || sticker.name;
-                        const svgFilename = `${baseName}.svg`;
-                        const svgBlob = new Blob([svgstr], {type: "image/svg+xml;charset=utf-8"});
-                        const svgUrl = URL.createObjectURL(svgBlob);
-
-                        addResultCard(svgFilename, svgUrl, svgstr);
-                        convertedCount++;
-                        progressSpan.textContent = convertedCount;
-                        resolve();
-                    }, options);
+                    img.src = sticker.dataUrl;
                 });
             }
 
