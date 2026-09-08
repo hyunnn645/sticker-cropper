@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스티커 자동 자르기 (여백 0 & ZIP 다운)</title>
-    <!-- ZIP 파일 생성을 위한 JSZip 라이브러리 추가 -->
+    <title>스티커 자동 자르기 (다중 업로드 & ZIP 다운)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body {
@@ -31,7 +30,6 @@
             box-sizing: border-box;
         }
         
-        /* 컨트롤 패널 (버튼 모음) */
         #controlPanel {
             display: none;
             flex-wrap: wrap;
@@ -60,7 +58,6 @@
         }
         .primary-btn:active { background-color: #0056b3; }
 
-        /* 결과 출력 영역 */
         #output {
             display: flex;
             flex-wrap: wrap;
@@ -78,7 +75,6 @@
             position: relative;
             cursor: pointer;
         }
-        /* 체크박스 스타일 */
         .sticker-card input[type="checkbox"] {
             width: 20px;
             height: 20px;
@@ -95,7 +91,6 @@
             border: 1px solid #e5e5e5;
             border-radius: 4px;
         }
-        /* 카드 선택 시 시각적 효과 */
         .sticker-card.selected {
             border: 2px solid #007aff;
             padding: 10px;
@@ -106,11 +101,11 @@
 
     <div class="upload-box">
         <h2>✂️ 스티커 자동 분리 도구</h2>
-        <p>프로크리에이트에서 <strong>배경을 투명하게 설정하여 저장한 PNG 파일</strong>을 업로드하세요.</p>
-        <input type="file" id="uploadInput" accept="image/png">
+        <p>프로크리에이트에서 배경을 투명하게 저장한 <strong>PNG 파일을 여러 장 선택</strong>해서 올릴 수 있습니다.</p>
+        <!-- multiple 속성 추가: 여러 파일 동시 선택 가능 -->
+        <input type="file" id="uploadInput" accept="image/png" multiple>
     </div>
 
-    <!-- 컨트롤 패널 -->
     <div id="controlPanel">
         <button id="selectAllBtn">전체 선택</button>
         <button id="deselectAllBtn">전체 해제</button>
@@ -120,7 +115,6 @@
     <div id="output"></div>
 
     <script>
-        // 버튼 이벤트 리스너 설정
         document.getElementById('selectAllBtn').addEventListener('click', () => {
             document.querySelectorAll('.sticker-checkbox').forEach(cb => {
                 cb.checked = true;
@@ -148,7 +142,6 @@
 
             checkedBoxes.forEach(cb => {
                 const filename = cb.dataset.filename;
-                // Base64 데이터에서 헤더(data:image/png;base64,) 부분을 제거하고 실제 데이터만 추출
                 const base64Data = cb.dataset.imgData.split(',')[1]; 
                 zip.file(filename, base64Data, {base64: true});
             });
@@ -162,129 +155,135 @@
             });
         });
 
-        // 이미지 업로드 및 분리 처리
         document.getElementById('uploadInput').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+            const files = e.target.files;
+            if (files.length === 0) return;
 
-            const img = new Image();
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                ctx.drawImage(img, 0, 0);
+            const output = document.getElementById('output');
+            output.innerHTML = ''; // 새 파일들 업로드 시 화면 초기화
+            document.getElementById('controlPanel').style.display = 'none';
 
-                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const data = imgData.data;
-                const width = canvas.width;
-                const height = canvas.height;
-                
-                const visited = new Uint8Array(width * height);
-                const rects = [];
+            let globalStickerCount = 0; // 여러 장의 이미지를 아우르는 전체 스티커 번호
 
-                for (let y = 0; y < height; y++) {
-                    for (let x = 0; x < width; x++) {
-                        const pIdx = y * width + x;
-                        if (visited[pIdx]) continue;
+            // 업로드된 파일들을 하나씩 처리
+            Array.from(files).forEach(file => {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    ctx.drawImage(img, 0, 0);
 
-                        const alpha = data[pIdx * 4 + 3];
-                        if (alpha < 10) {
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imgData.data;
+                    const width = canvas.width;
+                    const height = canvas.height;
+                    
+                    const visited = new Uint8Array(width * height);
+                    const rects = [];
+
+                    for (let y = 0; y < height; y++) {
+                        for (let x = 0; x < width; x++) {
+                            const pIdx = y * width + x;
+                            if (visited[pIdx]) continue;
+
+                            const alpha = data[pIdx * 4 + 3];
+                            if (alpha < 10) {
+                                visited[pIdx] = 1;
+                                continue;
+                            }
+
+                            let minX = x, maxX = x, minY = y, maxY = y;
+                            const queue = [pIdx];
                             visited[pIdx] = 1;
-                            continue;
-                        }
-
-                        let minX = x, maxX = x, minY = y, maxY = y;
-                        const queue = [pIdx];
-                        visited[pIdx] = 1;
-                        
-                        let area = 0;
-                        let head = 0;
-
-                        while (head < queue.length) {
-                            const curr = queue[head++];
-                            area++;
                             
-                            const cx = curr % width;
-                            const cy = Math.floor(curr / width);
+                            let area = 0;
+                            let head = 0;
 
-                            if (cx < minX) minX = cx;
-                            if (cx > maxX) maxX = cx;
-                            if (cy < minY) minY = cy;
-                            if (cy > maxY) maxY = cy;
+                            while (head < queue.length) {
+                                const curr = queue[head++];
+                                area++;
+                                
+                                const cx = curr % width;
+                                const cy = Math.floor(curr / width);
 
-                            const neighbors = [curr - width, curr + width, curr - 1, curr + 1];
-                            for (let i = 0; i < 4; i++) {
-                                const n = neighbors[i];
-                                if (n < 0 || n >= width * height) continue;
-                                if (i === 2 && curr % width === 0) continue; 
-                                if (i === 3 && curr % width === width - 1) continue; 
+                                if (cx < minX) minX = cx;
+                                if (cx > maxX) maxX = cx;
+                                if (cy < minY) minY = cy;
+                                if (cy > maxY) maxY = cy;
 
-                                if (!visited[n]) {
-                                    visited[n] = 1;
-                                    if (data[n * 4 + 3] >= 10) {
-                                        queue.push(n);
+                                const neighbors = [curr - width, curr + width, curr - 1, curr + 1];
+                                for (let i = 0; i < 4; i++) {
+                                    const n = neighbors[i];
+                                    if (n < 0 || n >= width * height) continue;
+                                    if (i === 2 && curr % width === 0) continue; 
+                                    if (i === 3 && curr % width === width - 1) continue; 
+
+                                    if (!visited[n]) {
+                                        visited[n] = 1;
+                                        if (data[n * 4 + 3] >= 10) {
+                                            queue.push(n);
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        if (area > 100) {
-                            rects.push({x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1});
+                            if (area > 100) {
+                                rects.push({x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1});
+                            }
                         }
                     }
-                }
 
-                const output = document.getElementById('output');
-                output.innerHTML = '';
-                
-                // 스티커가 1개 이상 분리되었으면 컨트롤 패널 표시
-                if (rects.length > 0) {
-                    document.getElementById('controlPanel').style.display = 'flex';
-                }
+                    if (rects.length > 0) {
+                        document.getElementById('controlPanel').style.display = 'flex';
+                    }
 
-                rects.forEach((rect, index) => {
-                    const cropCanvas = document.createElement('canvas');
-                    cropCanvas.width = rect.w;
-                    cropCanvas.height = rect.h;
-                    const cropCtx = cropCanvas.getContext('2d');
-                    
-                    cropCtx.putImageData(ctx.getImageData(rect.x, rect.y, rect.w, rect.h), 0, 0);
-                    const dataUrl = cropCanvas.toDataURL("image/png");
-                    const filename = `sticker_${String(index + 1).padStart(2, '0')}.png`;
+                    rects.forEach((rect) => {
+                        globalStickerCount++; // 전체 스티커 개수 증가
+                        
+                        const cropCanvas = document.createElement('canvas');
+                        cropCanvas.width = rect.w;
+                        cropCanvas.height = rect.h;
+                        const cropCtx = cropCanvas.getContext('2d');
+                        
+                        cropCtx.putImageData(ctx.getImageData(rect.x, rect.y, rect.w, rect.h), 0, 0);
+                        const dataUrl = cropCanvas.toDataURL("image/png");
+                        
+                        // 파일명이 001, 002 형식으로 저장되도록 변경 (여러 장 대비 3자리 수)
+                        const filename = `sticker_${String(globalStickerCount).padStart(3, '0')}.png`;
 
-                    const card = document.createElement('div');
-                    card.className = 'sticker-card selected'; // 기본적으로 선택된 상태
+                        const card = document.createElement('div');
+                        card.className = 'sticker-card selected'; 
 
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.className = 'sticker-checkbox';
-                    checkbox.checked = true; // 기본 체크
-                    checkbox.dataset.filename = filename;
-                    checkbox.dataset.imgData = dataUrl;
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.className = 'sticker-checkbox';
+                        checkbox.checked = true;
+                        checkbox.dataset.filename = filename;
+                        checkbox.dataset.imgData = dataUrl;
 
-                    const resultImg = document.createElement('img');
-                    resultImg.src = dataUrl;
+                        const resultImg = document.createElement('img');
+                        resultImg.src = dataUrl;
 
-                    // 카드(이미지나 여백) 클릭 시 체크박스 토글 기능
-                    card.addEventListener('click', (event) => {
-                        // 체크박스 자체를 직접 클릭했을 때는 중복 실행 방지
-                        if (event.target !== checkbox) {
-                            checkbox.checked = !checkbox.checked;
-                        }
-                        if (checkbox.checked) {
-                            card.classList.add('selected');
-                        } else {
-                            card.classList.remove('selected');
-                        }
+                        card.addEventListener('click', (event) => {
+                            if (event.target !== checkbox) {
+                                checkbox.checked = !checkbox.checked;
+                            }
+                            if (checkbox.checked) {
+                                card.classList.add('selected');
+                            } else {
+                                card.classList.remove('selected');
+                            }
+                        });
+
+                        card.appendChild(checkbox);
+                        card.appendChild(resultImg);
+                        output.appendChild(card);
                     });
-
-                    card.appendChild(checkbox);
-                    card.appendChild(resultImg);
-                    output.appendChild(card);
-                });
-            };
-            img.src = URL.createObjectURL(file);
+                };
+                img.src = URL.createObjectURL(file);
+            });
         });
     </script>
 </body>
