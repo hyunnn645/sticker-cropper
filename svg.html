@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2단계: SVG로 변환하기</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; background-color: #f5f5f7; padding: 20px; color: #333; margin: 0; }
+        /* 상단 메뉴바 스타일 */
+        .navbar { display: flex; gap: 10px; margin-bottom: 20px; background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .nav-btn { padding: 10px 16px; border-radius: 8px; text-decoration: none; font-weight: bold; background: #e5e5ea; color: #333; font-size: 14px; }
+        .nav-btn.active { background: #007aff; color: white; }
+
+        .box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        input[type="file"] { display: block; margin-top: 10px; padding: 10px; border: 2px dashed #ccc; border-radius: 8px; width: 100%; box-sizing: border-box; background: #fafafa; }
+        
+        #controls { display: none; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
+        button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; background: #e5e5ea; font-size: 14px; }
+        .success { background: #34c759; color: white; }
+
+        #output { display: flex; flex-wrap: wrap; gap: 15px; }
+        .card { background: white; padding: 10px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid transparent; width: 150px; position: relative; }
+        .card.selected { border-color: #007aff; }
+        
+        .preview-box {
+            width: 130px; height: 130px; display: flex; justify-content: center; align-items: center;
+            background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee); 
+            background-size: 16px 16px; background-position: 0 0, 8px 8px; 
+            border: 1px solid #eee; border-radius: 8px; margin: 8px 0; overflow: hidden;
+        }
+        .preview-box svg { max-width: 100%; max-height: 100%; }
+        .card input { cursor: pointer; width: 18px; height: 18px; align-self: flex-start; }
+        .filename { font-size: 11px; color: #666; margin-bottom: 5px; word-break: break-all; text-align: center; }
+        #loading { display: none; font-weight: bold; color: #007aff; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+    <!-- 상단 네비게이션 메뉴 -->
+    <div class="navbar">
+        <a href="index.html" class="nav-btn">✂️ 1단계: 스티커 자르기</a>
+        <a href="svg.html" class="nav-btn active">✨ 2단계: SVG로 변환하기</a>
+    </div>
+
+    <div class="box">
+        <h2 style="margin-top:0;">✨ 투명 PNG 스티커를 SVG로 변환</h2>
+        <p>1단계에서 잘라낸 투명 PNG 스티커들을 여러 장 선택해 올리면 벡터(SVG)로 변환해 줍니다.</p>
+        <input type="file" id="upload" accept="image/png" multiple>
+    </div>
+
+    <div id="loading">⏳ SVG 변환 중입니다... (<span id="progress">0</span>/<span id="total">0</span>)</div>
+
+    <div id="controls" class="box">
+        <button id="btnSelectAll">전체 선택</button>
+        <button id="btnDeselectAll">전체 해제</button>
+        <div style="flex-grow: 1;"></div>
+        <button id="btnDownloadZip" class="success">📦 선택한 SVG 일괄 ZIP 다운</button>
+    </div>
+
+    <div id="output"></div>
+
+    <script>
+        const upload = document.getElementById('upload');
+        const output = document.getElementById('output');
+        const controls = document.getElementById('controls');
+        const loading = document.getElementById('loading');
+        const progressSpan = document.getElementById('progress');
+        const totalSpan = document.getElementById('total');
+
+        upload.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files.length) return;
+
+            output.innerHTML = '';
+            controls.style.display = 'none';
+            loading.style.display = 'block';
+            totalSpan.textContent = files.length;
+            progressSpan.textContent = '0';
+
+            let convertedCount = 0;
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const reader = new FileReader();
+
+                await new Promise((resolve) => {
+                    reader.onload = function(event) {
+                        const imgDataUrl = event.target.result;
+                        const options = {
+                            ltres: 1, qtres: 1, pathomit: 8,
+                            colorsampling: 2, numberofcolors: 16,
+                            mincolorratio: 0.02, blurradius: 0, blurdelta: 20
+                        };
+
+                        ImageTracer.imageToSVG(imgDataUrl, function(svgstr) {
+                            const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                            const svgFilename = `${baseName}.svg`;
+                            const svgBlob = new Blob([svgstr], {type: "image/svg+xml;charset=utf-8"});
+                            const svgUrl = URL.createObjectURL(svgBlob);
+
+                            addResultCard(svgFilename, svgUrl, svgstr);
+                            convertedCount++;
+                            progressSpan.textContent = convertedCount;
+                            resolve();
+                        }, options);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            loading.style.display = 'none';
+            controls.style.display = 'flex';
+        });
+
+        function addResultCard(filename, svgUrl, svgString) {
+            const card = document.createElement('div');
+            card.className = 'card selected';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = true;
+            checkbox.dataset.filename = filename;
+            checkbox.dataset.svgString = svgString;
+
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'filename';
+            nameDiv.textContent = filename;
+
+            const previewBox = document.createElement('div');
+            previewBox.className = 'preview-box';
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(svgString, "image/svg+xml");
+            const svgElement = doc.documentElement;
+            svgElement.removeAttribute('width');
+            svgElement.removeAttribute('height');
+            svgElement.setAttribute('width', '100%');
+            svgElement.setAttribute('height', '100%');
+            previewBox.appendChild(svgElement);
+
+            card.addEventListener('click', (e) => {
+                if (e.target !== checkbox) checkbox.checked = !checkbox.checked;
+                card.classList.toggle('selected', checkbox.checked);
+            });
+
+            card.appendChild(checkbox);
+            card.appendChild(nameDiv);
+            card.appendChild(previewBox);
+            output.appendChild(card);
+        }
+
+        document.getElementById('btnSelectAll').addEventListener('click', () => {
+            document.querySelectorAll('.card').forEach(c => { c.classList.add('selected'); c.querySelector('input').checked = true; });
+        });
+        document.getElementById('btnDeselectAll').addEventListener('click', () => {
+            document.querySelectorAll('.card').forEach(c => { c.classList.remove('selected'); c.querySelector('input').checked = false; });
+        });
+
+        document.getElementById('btnDownloadZip').addEventListener('click', () => {
+            const checked = document.querySelectorAll('.card input:checked');
+            if (!checked.length) return alert('다운로드할 SVG를 선택해주세요.');
+
+            const btn = document.getElementById('btnDownloadZip');
+            btn.innerHTML = '⏳ 압축 중...';
+
+            const zip = new JSZip();
+            checked.forEach(cb => {
+                zip.file(cb.dataset.filename, cb.dataset.svgString);
+            });
+
+            zip.generateAsync({type: "blob"}).then(content => {
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(content);
+                a.download = "stickers_svg.zip";
+                a.click();
+                btn.innerHTML = '📦 선택한 SVG 일괄 ZIP 다운';
+            });
+        });
+    </script>
+</body>
+</html>
