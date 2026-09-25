@@ -28,13 +28,12 @@
             margin-bottom: 20px; 
             border: 2px solid #ccc; 
             border-radius: 8px;
-            overflow: hidden; /* 영역 밖으로 튀어나가지 않음 */
+            overflow: hidden; 
             background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee); 
             background-size: 16px 16px; 
             background-position: 0 0, 8px 8px; 
         }
         #baseCanvas { width: 100%; height: auto; display: block; }
-        /* 터치 시 스크롤을 막기 위해 기본적으로 touch-action: none 설정 */
         #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 
         #output { display: flex; flex-wrap: wrap; gap: 15px; }
@@ -61,7 +60,6 @@
         <button id="btnDownload" class="primary">📦 ZIP 다운로드</button>
     </div>
 
-    <!-- 수동 모드일 때만 나타나는 패널 -->
     <div id="manualSubControls">
         <label style="font-weight:bold;">🖼️ 작업할 이미지 선택:</label>
         <select id="imageSelector"></select>
@@ -80,10 +78,9 @@
 
     <script>
         let stickerCount = 0;
-        let mode = 'auto'; // 'auto' or 'manual'
-        let uploadedFilesData = []; // 업로드된 여러 이미지를 저장하는 배열
+        let mode = 'auto';
+        let uploadedFilesData = [];
         
-        // 수동 자르기용 변수
         let currentImg = null;
         let isDrawing = false;
         let startX = 0, startY = 0, endX = 0, endY = 0;
@@ -97,7 +94,33 @@
         const ctxOverlay = overlay.getContext('2d');
         const imageSelector = document.getElementById('imageSelector');
 
-        // 1. 파일 업로드 처리
+        // ⭐ 3000x3000 해상도 맞춤 및 화질 보존 스케일링 함수
+        function getHighQualityScaledUrl(sourceCanvas) {
+            const MAX_DIM = 3000;
+            const w = sourceCanvas.width;
+            const h = sourceCanvas.height;
+
+            // 원본 비율을 유지하며 긴 축을 3000px에 맞추기 위한 비율 계산
+            const scale = Math.min(MAX_DIM / w, MAX_DIM / h);
+            
+            const targetW = Math.round(w * scale);
+            const targetH = Math.round(h * scale);
+
+            const scaledCanvas = document.createElement('canvas');
+            scaledCanvas.width = targetW;
+            scaledCanvas.height = targetH;
+            
+            const ctx = scaledCanvas.getContext('2d');
+            
+            // 캔버스 자체 화질 보존 알고리즘 활성화
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            ctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
+
+            return scaledCanvas.toDataURL('image/png');
+        }
+
         upload.addEventListener('change', async (e) => {
             if(!e.target.files.length) return;
             output.innerHTML = '';
@@ -106,7 +129,6 @@
             imageSelector.innerHTML = '';
             document.getElementById('controls').style.display = 'flex';
 
-            // 비동기 처리로 파일들을 순서대로 읽어서 배열에 저장
             for (let i = 0; i < e.target.files.length; i++) {
                 const file = e.target.files[i];
                 const img = new Image();
@@ -118,22 +140,19 @@
 
                 uploadedFilesData.push({ name: file.name, img: img });
 
-                // 드롭다운 메뉴에 추가
                 const opt = document.createElement('option');
                 opt.value = i;
                 opt.text = `${i+1}. ${file.name}`;
                 imageSelector.appendChild(opt);
             }
 
-            // 업로드가 끝나면 현재 모드에 따라 실행
             if (mode === 'auto') {
                 runAutoCropOnAll();
             } else {
-                loadManualImage(0); // 수동모드면 첫번째 이미지 띄우기
+                loadManualImage(0);
             }
         });
 
-        // 2. 여러 장 이미지 자동 자르기 실행 함수
         function runAutoCropOnAll() {
             output.innerHTML = '';
             stickerCount = 0;
@@ -142,12 +161,10 @@
             });
         }
 
-        // 3. 수동 자르기용 이미지 캔버스에 로드
         function loadManualImage(index) {
             if (!uploadedFilesData[index]) return;
             currentImg = uploadedFilesData[index].img;
             
-            // 실제 이미지 픽셀 크기로 캔버스 해상도 맞춤 (화면 표시는 CSS 100%가 알아서 조절)
             baseCanvas.width = overlay.width = currentImg.width;
             baseCanvas.height = overlay.height = currentImg.height;
             
@@ -158,27 +175,22 @@
             startX = endX = startY = endY = 0;
         }
 
-        // 드롭다운에서 다른 이미지 선택 시
         imageSelector.addEventListener('change', (e) => {
             loadManualImage(e.target.value);
         });
 
-        // ⭐ 아이패드 스크롤/그리기 모드 전환
         document.getElementById('btnPanMode').addEventListener('click', function() {
             this.classList.add('active', 'primary');
             document.getElementById('btnDrawMode').classList.remove('active', 'primary');
-            // pointerEvents를 none으로 하면 오버레이가 터치를 무시하고 사파리 기본 스크롤이 작동함
             overlay.style.pointerEvents = 'none'; 
         });
 
         document.getElementById('btnDrawMode').addEventListener('click', function() {
             this.classList.add('active', 'primary');
             document.getElementById('btnPanMode').classList.remove('active', 'primary');
-            // 다시 터치를 활성화하여 영역을 그릴 수 있게 함
             overlay.style.pointerEvents = 'auto'; 
         });
 
-        // 4. 모드 변경 (자동 <-> 수동)
         document.getElementById('btnAuto').addEventListener('click', function() {
             mode = 'auto';
             this.classList.add('active');
@@ -199,12 +211,10 @@
             stickerCount = 0;
             if (uploadedFilesData.length > 0) {
                 loadManualImage(imageSelector.value);
-                // 기본으로 그리기 모드 활성화
                 document.getElementById('btnDrawMode').click();
             }
         });
 
-        // ⭐ 5. 수동 자르기 캔버스 좌표 계산 (화면 줌/축소 완벽 대응)
         function getPos(e) {
             const rect = overlay.getBoundingClientRect();
             let clientX = e.clientX, clientY = e.clientY;
@@ -212,7 +222,6 @@
                 clientX = e.touches[0].clientX;
                 clientY = e.touches[0].clientY;
             }
-            // CSS로 축소된 캔버스 크기 비율을 계산하여 실제 픽셀 위치를 정확히 추적
             const scaleX = overlay.width / rect.width;
             const scaleY = overlay.height / rect.height;
             
@@ -224,7 +233,7 @@
 
         function startDraw(e) {
             if(mode !== 'manual') return;
-            e.preventDefault(); // 스크롤 방지
+            e.preventDefault();
             isDrawing = true;
             const pos = getPos(e);
             startX = pos.x; startY = pos.y;
@@ -239,7 +248,7 @@
             ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
             ctxOverlay.fillStyle = "rgba(0, 122, 255, 0.3)";
             ctxOverlay.strokeStyle = "#007aff";
-            ctxOverlay.lineWidth = Math.max(2, overlay.width / 500); // 해상도 비례 선 굵기
+            ctxOverlay.lineWidth = Math.max(2, overlay.width / 500);
             
             const w = endX - startX;
             const h = endY - startY;
@@ -259,7 +268,7 @@
         overlay.addEventListener('touchmove', draw, {passive: false});
         window.addEventListener('touchend', endDraw);
 
-        // 수동 선택 영역 자르기 버튼 클릭 시
+        // ⭐ 수동 영역 자르기 완료 시 리사이징 적용
         document.getElementById('btnCrop').addEventListener('click', () => {
             const x = Math.min(startX, endX);
             const y = Math.min(startY, endY);
@@ -272,12 +281,14 @@
             resultCanvas.width = w; resultCanvas.height = h;
             resultCanvas.getContext('2d').putImageData(ctxBase.getImageData(x, y, w, h), 0, 0);
             
-            addResultCard(resultCanvas.toDataURL('image/png'));
+            // 비율 보존 & 3000px 맞춤 스케일링
+            const optimizedDataUrl = getHighQualityScaledUrl(resultCanvas);
+            addResultCard(optimizedDataUrl);
+            
             ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
             startX = endX = startY = endY = 0;
         });
 
-        // 6. 결과 카드 화면에 추가
         function addResultCard(dataUrl) {
             stickerCount++;
             const filename = `sticker_${String(stickerCount).padStart(3, '0')}.png`;
@@ -301,13 +312,12 @@
 
             card.appendChild(checkbox);
             card.appendChild(img);
-            output.appendChild(card); // 새로운 카드를 맨 뒤에 추가
+            output.appendChild(card);
             
-            // 모바일에서 스크롤이 자동으로 아래로 가게 배려
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
         }
 
-        // 7. 자동 자르기 핵심 로직 (정밀 분리)
+        // ⭐ 자동 자르기 완료 시 리사이징 적용
         function processAutoCrop(img) {
             const tempC = document.createElement('canvas');
             tempC.width = img.width; tempC.height = img.height;
@@ -374,13 +384,14 @@
                         resultCanvas.width = rectW; resultCanvas.height = rectH;
                         resultCanvas.getContext('2d').putImageData(cropData, 0, 0);
                         
-                        addResultCard(resultCanvas.toDataURL('image/png'));
+                        // 비율 보존 & 3000px 맞춤 스케일링
+                        const optimizedDataUrl = getHighQualityScaledUrl(resultCanvas);
+                        addResultCard(optimizedDataUrl);
                     }
                 }
             }
         }
 
-        // 전체 선택 / 해제 / ZIP 다운로드 이벤트
         document.getElementById('btnSelectAll').addEventListener('click', () => {
             document.querySelectorAll('.card').forEach(c => { c.classList.add('selected'); c.querySelector('input').checked = true; });
         });
