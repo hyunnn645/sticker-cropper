@@ -16,11 +16,9 @@
         .primary { background: #007aff; color: white; }
         .warning { background: #ff3b30; color: white; }
 
-        /* 수동 자르기 전용 컨트롤 바 */
         #manualSubControls { display: none; gap: 10px; margin-bottom: 15px; background: #eef1f6; padding: 15px; border-radius: 8px; align-items: center; flex-wrap: wrap; border: 1px solid #d0d7e5; }
         select { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; font-weight: bold; background: white; }
 
-        /* 아이패드 화면에 맞게 캔버스 자동 조절 */
         #workspace { 
             display: none; 
             position: relative; 
@@ -37,31 +35,34 @@
         #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 
         #output { display: flex; flex-wrap: wrap; gap: 15px; }
-        .card { background: white; padding: 10px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid transparent; width: 140px; }
+        .card { background: white; padding: 10px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid transparent; width: 140px; position: relative; }
         .card.selected { border-color: #007aff; }
-        .card img { max-width: 120px; max-height: 120px; margin-top: 10px; background: #fafafa; border: 1px solid #eee; object-fit: contain; }
-        .card input { cursor: pointer; width: 18px; height: 18px; }
-
-        /* ⭐ 로딩 오버레이 UI 추가 */
+        .card img { max-width: 120px; max-height: 120px; margin-top: 10px; margin-bottom: 10px; background: #fafafa; border: 1px solid #eee; object-fit: contain; }
+        
+        /* ⭐ 파일 이름 변경용 입력칸 스타일 */
+        .name-input { 
+            width: 100%; 
+            padding: 6px; 
+            font-size: 12px; 
+            border: 1px solid #ccc; 
+            border-radius: 6px; 
+            text-align: center; 
+            box-sizing: border-box; 
+        }
+        .name-input:focus { outline: 2px solid #007aff; border-color: transparent; }
+        
+        /* 체크박스 위치 조정 */
+        .check-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+        .check-wrap input[type="checkbox"] { cursor: pointer; width: 18px; height: 18px; margin: 0; }
+        
         #loadingOverlay {
-            display: none; 
-            position: fixed; 
-            top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(255, 255, 255, 0.85); 
-            z-index: 9999; 
-            flex-direction: column; 
-            justify-content: center; 
-            align-items: center; 
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(255, 255, 255, 0.85); z-index: 9999; flex-direction: column; 
+            justify-content: center; align-items: center; backdrop-filter: blur(4px);
         }
         .spinner {
-            border: 4px solid #e5e5ea;
-            border-top: 4px solid #007aff;
-            border-radius: 50%;
-            width: 48px; height: 48px;
-            animation: spin 1s linear infinite;
-            margin-bottom: 16px;
+            border: 4px solid #e5e5ea; border-top: 4px solid #007aff; border-radius: 50%;
+            width: 48px; height: 48px; animation: spin 1s linear infinite; margin-bottom: 16px;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         #loadingTitle { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
@@ -70,7 +71,6 @@
 </head>
 <body>
 
-    <!-- ⭐ 로딩 화면 영역 -->
     <div id="loadingOverlay">
         <div class="spinner"></div>
         <div id="loadingTitle">이미지 처리 중...</div>
@@ -78,8 +78,8 @@
     </div>
 
     <div class="box">
-        <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기 (아이패드 최적화)</h2>
-        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. 자동으로 고화질(최대 3000px)에 맞춰 잘라냅니다.</p>
+        <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기</h2>
+        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. 자동으로 고화질(최대 3000px)에 맞춰 잘라냅니다. <b>다운로드 전 이름을 클릭해 수정할 수 있습니다.</b></p>
         <input type="file" id="upload" accept="image/*, .zip" multiple>
     </div>
 
@@ -112,7 +112,6 @@
         let stickerCount = 0;
         let mode = 'auto';
         let uploadedFilesData = [];
-        
         let currentImg = null;
         let isDrawing = false;
         let startX = 0, startY = 0, endX = 0, endY = 0;
@@ -126,7 +125,6 @@
         const ctxOverlay = overlay.getContext('2d');
         const imageSelector = document.getElementById('imageSelector');
 
-        // 로딩 UI 제어 함수
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingTitle = document.getElementById('loadingTitle');
         const loadingDesc = document.getElementById('loadingDesc');
@@ -147,7 +145,6 @@
             const h = sourceCanvas.height;
 
             const scale = Math.min(MAX_DIM / w, MAX_DIM / h);
-            
             const targetW = Math.round(w * scale);
             const targetH = Math.round(h * scale);
 
@@ -156,7 +153,6 @@
             scaledCanvas.height = targetH;
             
             const ctx = scaledCanvas.getContext('2d');
-            
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
@@ -167,11 +163,7 @@
         async function addImageToWorkspace(blobOrFile, filename) {
             const img = new Image();
             img.src = URL.createObjectURL(blobOrFile);
-            
-            await new Promise(resolve => {
-                img.onload = () => resolve();
-            });
-
+            await new Promise(resolve => img.onload = () => resolve());
             uploadedFilesData.push({ name: filename, img: img });
 
             const opt = document.createElement('option');
@@ -182,7 +174,6 @@
 
         upload.addEventListener('change', async (e) => {
             if(!e.target.files.length) return;
-            
             showLoading("파일을 불러오는 중...", "압축 해제 및 이미지 변환 중입니다.");
             
             output.innerHTML = '';
@@ -193,11 +184,9 @@
 
             for (let i = 0; i < e.target.files.length; i++) {
                 const file = e.target.files[i];
-
                 if (file.name.toLowerCase().endsWith('.zip')) {
                     const zip = new JSZip();
                     const loadedZip = await zip.loadAsync(file);
-                    
                     for (const relativePath in loadedZip.files) {
                         const zipEntry = loadedZip.files[relativePath];
                         if (!zipEntry.dir && !relativePath.includes('__MACOSX') && relativePath.match(/\.(png|jpe?g|webp)$/i)) {
@@ -211,207 +200,144 @@
             }
 
             if (uploadedFilesData.length > 0) {
-                if (mode === 'auto') {
-                    await runAutoCropOnAllAsync();
-                } else {
-                    loadManualImage(0);
-                    hideLoading();
-                }
+                if (mode === 'auto') await runAutoCropOnAllAsync();
+                else { loadManualImage(0); hideLoading(); }
             } else {
                 hideLoading();
                 alert("처리할 이미지가 없습니다.");
             }
         });
 
-        // ⭐ 비동기 처리로 화면 렌더링을 차단하지 않도록 수정된 자동 크롭 함수
         async function runAutoCropOnAllAsync() {
             output.innerHTML = '';
             stickerCount = 0;
             const total = uploadedFilesData.length;
 
             for (let i = 0; i < total; i++) {
-                // UI 업데이트: 현재 몇 번째 이미지를 처리 중인지 표시
                 showLoading("자동 크롭 진행 중...", `이미지 분석 중: ${i + 1} / ${total}`);
-                
-                // 브라우저가 화면(로딩바)을 업데이트할 수 있도록 짧은 시간 양보(yield)
                 await new Promise(resolve => setTimeout(resolve, 50));
-
-                // 실제 무거운 크롭 작업 실행
                 processAutoCrop(uploadedFilesData[i].img);
             }
-
             hideLoading();
         }
 
         function loadManualImage(index) {
             if (!uploadedFilesData[index]) return;
             currentImg = uploadedFilesData[index].img;
-            
             baseCanvas.width = overlay.width = currentImg.width;
             baseCanvas.height = overlay.height = currentImg.height;
-            
             ctxBase.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
             ctxBase.drawImage(currentImg, 0, 0);
             ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
-            
             startX = endX = startY = endY = 0;
         }
 
-        imageSelector.addEventListener('change', (e) => {
-            loadManualImage(e.target.value);
-        });
-
+        imageSelector.addEventListener('change', e => loadManualImage(e.target.value));
         document.getElementById('btnPanMode').addEventListener('click', function() {
-            this.classList.add('active', 'primary');
-            document.getElementById('btnDrawMode').classList.remove('active', 'primary');
+            this.classList.add('active', 'primary'); document.getElementById('btnDrawMode').classList.remove('active', 'primary');
             overlay.style.pointerEvents = 'none'; 
         });
-
         document.getElementById('btnDrawMode').addEventListener('click', function() {
-            this.classList.add('active', 'primary');
-            document.getElementById('btnPanMode').classList.remove('active', 'primary');
+            this.classList.add('active', 'primary'); document.getElementById('btnPanMode').classList.remove('active', 'primary');
             overlay.style.pointerEvents = 'auto'; 
         });
 
-        // ⭐ 버튼 클릭 시에도 로딩 화면이 작동하도록 async 적용
         document.getElementById('btnAuto').addEventListener('click', async function() {
-            mode = 'auto';
-            this.classList.add('active');
-            document.getElementById('btnManual').classList.remove('active');
-            document.getElementById('manualSubControls').style.display = 'none';
-            workspace.style.display = 'none';
+            mode = 'auto'; this.classList.add('active'); document.getElementById('btnManual').classList.remove('active');
+            document.getElementById('manualSubControls').style.display = 'none'; workspace.style.display = 'none';
             await runAutoCropOnAllAsync();
         });
 
         document.getElementById('btnManual').addEventListener('click', function() {
-            mode = 'manual';
-            this.classList.add('active');
-            document.getElementById('btnAuto').classList.remove('active');
-            document.getElementById('manualSubControls').style.display = 'flex';
-            workspace.style.display = 'block';
-            
-            output.innerHTML = '';
-            stickerCount = 0;
-            if (uploadedFilesData.length > 0) {
-                loadManualImage(imageSelector.value);
-                document.getElementById('btnDrawMode').click();
-            }
+            mode = 'manual'; this.classList.add('active'); document.getElementById('btnAuto').classList.remove('active');
+            document.getElementById('manualSubControls').style.display = 'flex'; workspace.style.display = 'block';
+            output.innerHTML = ''; stickerCount = 0;
+            if (uploadedFilesData.length > 0) { loadManualImage(imageSelector.value); document.getElementById('btnDrawMode').click(); }
         });
 
         function getPos(e) {
             const rect = overlay.getBoundingClientRect();
             let clientX = e.clientX, clientY = e.clientY;
-            if(e.touches && e.touches.length > 0) {
-                clientX = e.touches[0].clientX;
-                clientY = e.touches[0].clientY;
-            }
-            const scaleX = overlay.width / rect.width;
-            const scaleY = overlay.height / rect.height;
-            
-            return {
-                x: (clientX - rect.left) * scaleX,
-                y: (clientY - rect.top) * scaleY
-            };
+            if(e.touches && e.touches.length > 0) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+            const scaleX = overlay.width / rect.width; const scaleY = overlay.height / rect.height;
+            return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
         }
 
-        function startDraw(e) {
-            if(mode !== 'manual') return;
-            e.preventDefault();
-            isDrawing = true;
-            const pos = getPos(e);
-            startX = pos.x; startY = pos.y;
-        }
-
+        function startDraw(e) { if(mode !== 'manual') return; e.preventDefault(); isDrawing = true; const pos = getPos(e); startX = pos.x; startY = pos.y; }
         function draw(e) {
-            if(!isDrawing) return;
-            e.preventDefault();
-            const pos = getPos(e);
-            endX = pos.x; endY = pos.y;
-            
-            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
-            ctxOverlay.fillStyle = "rgba(0, 122, 255, 0.3)";
-            ctxOverlay.strokeStyle = "#007aff";
-            ctxOverlay.lineWidth = Math.max(2, overlay.width / 500);
-            
-            const w = endX - startX;
-            const h = endY - startY;
-            ctxOverlay.fillRect(startX, startY, w, h);
-            ctxOverlay.strokeRect(startX, startY, w, h);
+            if(!isDrawing) return; e.preventDefault(); const pos = getPos(e); endX = pos.x; endY = pos.y;
+            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height); ctxOverlay.fillStyle = "rgba(0, 122, 255, 0.3)";
+            ctxOverlay.strokeStyle = "#007aff"; ctxOverlay.lineWidth = Math.max(2, overlay.width / 500);
+            const w = endX - startX, h = endY - startY;
+            ctxOverlay.fillRect(startX, startY, w, h); ctxOverlay.strokeRect(startX, startY, w, h);
         }
+        function endDraw(e) { if(!isDrawing) return; isDrawing = false; }
 
-        function endDraw(e) {
-            if(!isDrawing) return;
-            isDrawing = false;
-        }
-
-        overlay.addEventListener('mousedown', startDraw);
-        overlay.addEventListener('mousemove', draw);
-        window.addEventListener('mouseup', endDraw);
-        overlay.addEventListener('touchstart', startDraw, {passive: false});
-        overlay.addEventListener('touchmove', draw, {passive: false});
-        window.addEventListener('touchend', endDraw);
+        overlay.addEventListener('mousedown', startDraw); overlay.addEventListener('mousemove', draw); window.addEventListener('mouseup', endDraw);
+        overlay.addEventListener('touchstart', startDraw, {passive: false}); overlay.addEventListener('touchmove', draw, {passive: false}); window.addEventListener('touchend', endDraw);
 
         document.getElementById('btnCrop').addEventListener('click', () => {
-            const x = Math.min(startX, endX);
-            const y = Math.min(startY, endY);
-            const w = Math.abs(endX - startX);
-            const h = Math.abs(endY - startY);
-            
+            const x = Math.min(startX, endX), y = Math.min(startY, endY), w = Math.abs(endX - startX), h = Math.abs(endY - startY);
             if(w < 10 || h < 10) return alert("자를 영역을 먼저 네모나게 드래그 해주세요!");
-
-            const resultCanvas = document.createElement('canvas');
-            resultCanvas.width = w; resultCanvas.height = h;
+            const resultCanvas = document.createElement('canvas'); resultCanvas.width = w; resultCanvas.height = h;
             resultCanvas.getContext('2d').putImageData(ctxBase.getImageData(x, y, w, h), 0, 0);
-            
-            const optimizedDataUrl = getHighQualityScaledUrl(resultCanvas);
-            addResultCard(optimizedDataUrl);
-            
-            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
-            startX = endX = startY = endY = 0;
+            addResultCard(getHighQualityScaledUrl(resultCanvas));
+            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height); startX = endX = startY = endY = 0;
         });
 
+        // ⭐ 결과 카드 생성 (텍스트 입력창 추가)
         function addResultCard(dataUrl) {
             stickerCount++;
-            const filename = `sticker_${String(stickerCount).padStart(3, '0')}.png`;
+            const defaultFilename = `sticker_${String(stickerCount).padStart(3, '0')}`;
             
             const card = document.createElement('div');
             card.className = 'card selected';
             
+            // 상단: 체크박스
+            const checkWrap = document.createElement('div');
+            checkWrap.className = 'check-wrap';
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.checked = true;
-            checkbox.dataset.filename = filename;
-            checkbox.dataset.dataurl = dataUrl;
-            
+            checkbox.dataset.dataurl = dataUrl; // URL 데이터만 보관
+            checkWrap.appendChild(checkbox);
+
+            // 중앙: 이미지
             const img = document.createElement('img');
             img.src = dataUrl;
 
+            // 하단: 파일 이름 수정 텍스트칸
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'name-input';
+            nameInput.value = defaultFilename;
+            
+            // 텍스트칸 클릭 시 카드 전체 선택이 토글되지 않도록 방지
+            nameInput.addEventListener('click', (e) => e.stopPropagation());
+            // 모바일 키보드 사용 편의성 보장
+            nameInput.addEventListener('touchstart', (e) => e.stopPropagation());
+
+            // 카드 클릭 시 체크박스 토글
             card.addEventListener('click', (e) => {
-                if(e.target !== checkbox) checkbox.checked = !checkbox.checked;
+                if(e.target !== checkbox && e.target !== nameInput) checkbox.checked = !checkbox.checked;
                 card.classList.toggle('selected', checkbox.checked);
             });
 
-            card.appendChild(checkbox);
+            card.appendChild(checkWrap);
             card.appendChild(img);
+            card.appendChild(nameInput); // 입력칸 추가
             output.appendChild(card);
             
-            // 로딩 중이 아닐 때만 자동 스크롤 (화면 튕김 방지)
             if (loadingOverlay.style.display === 'none') {
                 window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
             }
         }
 
         function processAutoCrop(img) {
-            const tempC = document.createElement('canvas');
-            tempC.width = img.width; tempC.height = img.height;
-            const tCtx = tempC.getContext('2d', { willReadFrequently: true });
-            tCtx.drawImage(img, 0, 0);
-            
-            const imgData = tCtx.getImageData(0, 0, tempC.width, tempC.height);
-            const data = imgData.data;
-            const w = tempC.width;
-            const h = tempC.height;
-            const visited = new Uint8Array(w * h);
+            const tempC = document.createElement('canvas'); tempC.width = img.width; tempC.height = img.height;
+            const tCtx = tempC.getContext('2d', { willReadFrequently: true }); tCtx.drawImage(img, 0, 0);
+            const imgData = tCtx.getImageData(0, 0, tempC.width, tempC.height); const data = imgData.data;
+            const w = tempC.width, h = tempC.height; const visited = new Uint8Array(w * h);
 
             for (let y = 0; y < h; y++) {
                 for (let x = 0; x < w; x++) {
@@ -419,20 +345,12 @@
                     if (visited[pIdx]) continue;
                     if (data[pIdx * 4 + 3] < 10) { visited[pIdx] = 1; continue; }
 
-                    const queue = [pIdx];
-                    visited[pIdx] = 1;
-                    let head = 0;
+                    const queue = [pIdx]; visited[pIdx] = 1; let head = 0;
                     let minX = x, maxX = x, minY = y, maxY = y;
 
                     while (head < queue.length) {
-                        const curr = queue[head++];
-                        const cx = curr % w;
-                        const cy = Math.floor(curr / w);
-
-                        if (cx < minX) minX = cx;
-                        if (cx > maxX) maxX = cx;
-                        if (cy < minY) minY = cy;
-                        if (cy > maxY) maxY = cy;
+                        const curr = queue[head++]; const cx = curr % w, cy = Math.floor(curr / w);
+                        if (cx < minX) minX = cx; if (cx > maxX) maxX = cx; if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
 
                         const neighbors = [curr - w, curr + w, curr - 1, curr + 1];
                         for (let i = 0; i < 4; i++) {
@@ -440,58 +358,53 @@
                             if (n < 0 || n >= w * h) continue;
                             if (i === 2 && curr % w === 0) continue;
                             if (i === 3 && curr % w === w - 1) continue;
-
-                            if (!visited[n]) {
-                                visited[n] = 1;
-                                if (data[n * 4 + 3] >= 10) queue.push(n);
-                            }
+                            if (!visited[n]) { visited[n] = 1; if (data[n * 4 + 3] >= 10) queue.push(n); }
                         }
                     }
 
                     if (queue.length > 100) {
-                        const rectW = maxX - minX + 1;
-                        const rectH = maxY - minY + 1;
-                        
+                        const rectW = maxX - minX + 1, rectH = maxY - minY + 1;
                         const cropData = new ImageData(rectW, rectH);
                         for(let i=0; i<queue.length; i++) {
-                            const qIdx = queue[i];
-                            const localIdx = ((Math.floor(qIdx / w) - minY) * rectW + (qIdx % w - minX)) * 4;
-                            const origIdx = qIdx * 4;
-                            cropData.data[localIdx] = data[origIdx];
-                            cropData.data[localIdx+1] = data[origIdx+1];
-                            cropData.data[localIdx+2] = data[origIdx+2];
-                            cropData.data[localIdx+3] = data[origIdx+3];
+                            const qIdx = queue[i]; const localIdx = ((Math.floor(qIdx / w) - minY) * rectW + (qIdx % w - minX)) * 4; const origIdx = qIdx * 4;
+                            cropData.data[localIdx] = data[origIdx]; cropData.data[localIdx+1] = data[origIdx+1];
+                            cropData.data[localIdx+2] = data[origIdx+2]; cropData.data[localIdx+3] = data[origIdx+3];
                         }
-                        
-                        const resultCanvas = document.createElement('canvas');
-                        resultCanvas.width = rectW; resultCanvas.height = rectH;
+                        const resultCanvas = document.createElement('canvas'); resultCanvas.width = rectW; resultCanvas.height = rectH;
                         resultCanvas.getContext('2d').putImageData(cropData, 0, 0);
-                        
-                        const optimizedDataUrl = getHighQualityScaledUrl(resultCanvas);
-                        addResultCard(optimizedDataUrl);
+                        addResultCard(getHighQualityScaledUrl(resultCanvas));
                     }
                 }
             }
         }
 
         document.getElementById('btnSelectAll').addEventListener('click', () => {
-            document.querySelectorAll('.card').forEach(c => { c.classList.add('selected'); c.querySelector('input').checked = true; });
+            document.querySelectorAll('.card').forEach(c => { c.classList.add('selected'); c.querySelector('input[type="checkbox"]').checked = true; });
         });
         document.getElementById('btnDeselectAll').addEventListener('click', () => {
-            document.querySelectorAll('.card').forEach(c => { c.classList.remove('selected'); c.querySelector('input').checked = false; });
+            document.querySelectorAll('.card').forEach(c => { c.classList.remove('selected'); c.querySelector('input[type="checkbox"]').checked = false; });
         });
         
+        // ⭐ ZIP 다운로드 시 입력된 이름을 가져와서 사용
         document.getElementById('btnDownload').addEventListener('click', () => {
-            const checked = document.querySelectorAll('.card input:checked');
+            const checked = document.querySelectorAll('.card input[type="checkbox"]:checked');
             if(!checked.length) return alert('다운로드할 스티커를 선택해주세요.');
             
             showLoading("ZIP 압축 중...", "다운로드가 곧 시작됩니다.");
             
-            // 압축 과정도 UI 업데이트를 위해 비동기로 감싸기
             setTimeout(() => {
                 const zip = new JSZip();
                 checked.forEach(cb => {
-                    zip.file(cb.dataset.filename, cb.dataset.dataurl.split(',')[1], {base64: true});
+                    const card = cb.closest('.card');
+                    // 카드 안에서 사용자가 적은 파일 이름을 가져옴
+                    const nameInput = card.querySelector('.name-input');
+                    let filename = nameInput.value.trim();
+                    
+                    // 빈 칸이면 기본 이름 부여, .png 확장자 확인 후 붙임
+                    if (!filename) filename = `unnamed_${Date.now()}`;
+                    if (!filename.toLowerCase().endsWith('.png')) filename += '.png';
+
+                    zip.file(filename, cb.dataset.dataurl.split(',')[1], {base64: true});
                 });
                 
                 zip.generateAsync({type: "blob"}).then(content => {
