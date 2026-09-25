@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -47,8 +47,9 @@
 
     <div class="box">
         <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기 (아이패드 최적화)</h2>
-        <p>투명 배경 PNG를 여러 장 올리세요. 수동 모드에서는 화면 이동과 자르기 모드를 전환하며 편하게 작업할 수 있습니다.</p>
-        <input type="file" id="upload" accept="image/png" multiple>
+        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. 자동으로 고화질(최대 3000px)에 맞춰 잘라냅니다.</p>
+        <!-- ⭐ 사진 앱 호출을 위한 image/* 및 ZIP 파일 허용 -->
+        <input type="file" id="upload" accept="image/*, .zip" multiple>
     </div>
 
     <div id="controls" class="box">
@@ -94,13 +95,12 @@
         const ctxOverlay = overlay.getContext('2d');
         const imageSelector = document.getElementById('imageSelector');
 
-        // ⭐ 3000x3000 해상도 맞춤 및 화질 보존 스케일링 함수
+        // 3000x3000 해상도 맞춤 및 화질 보존 스케일링 함수
         function getHighQualityScaledUrl(sourceCanvas) {
             const MAX_DIM = 3000;
             const w = sourceCanvas.width;
             const h = sourceCanvas.height;
 
-            // 원본 비율을 유지하며 긴 축을 3000px에 맞추기 위한 비율 계산
             const scale = Math.min(MAX_DIM / w, MAX_DIM / h);
             
             const targetW = Math.round(w * scale);
@@ -112,15 +112,31 @@
             
             const ctx = scaledCanvas.getContext('2d');
             
-            // 캔버스 자체 화질 보존 알고리즘 활성화
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-
             ctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
 
             return scaledCanvas.toDataURL('image/png');
         }
 
+        // ⭐ 공통 이미지 로드 및 드롭다운 추가 함수
+        async function addImageToWorkspace(blobOrFile, filename) {
+            const img = new Image();
+            img.src = URL.createObjectURL(blobOrFile);
+            
+            await new Promise(resolve => {
+                img.onload = () => resolve();
+            });
+
+            uploadedFilesData.push({ name: filename, img: img });
+
+            const opt = document.createElement('option');
+            opt.value = uploadedFilesData.length - 1;
+            opt.text = `${uploadedFilesData.length}. ${filename}`;
+            imageSelector.appendChild(opt);
+        }
+
+        // ⭐ 파일 업로드 처리 이벤트 (사진 앱 + ZIP 파일 동시 지원)
         upload.addEventListener('change', async (e) => {
             if(!e.target.files.length) return;
             output.innerHTML = '';
@@ -131,25 +147,35 @@
 
             for (let i = 0; i < e.target.files.length; i++) {
                 const file = e.target.files[i];
-                const img = new Image();
-                img.src = URL.createObjectURL(file);
-                
-                await new Promise(resolve => {
-                    img.onload = () => resolve();
-                });
 
-                uploadedFilesData.push({ name: file.name, img: img });
-
-                const opt = document.createElement('option');
-                opt.value = i;
-                opt.text = `${i+1}. ${file.name}`;
-                imageSelector.appendChild(opt);
+                if (file.name.toLowerCase().endsWith('.zip')) {
+                    // ZIP 파일인 경우 압축을 풀어서 이미지 파일만 추출
+                    const zip = new JSZip();
+                    const loadedZip = await zip.loadAsync(file);
+                    
+                    for (const relativePath in loadedZip.files) {
+                        const zipEntry = loadedZip.files[relativePath];
+                        // 폴더가 아니고, 맥OS 시스템 파일이 아니며, 이미지 확장자인 경우
+                        if (!zipEntry.dir && !relativePath.includes('__MACOSX') && relativePath.match(/\.(png|jpe?g|webp)$/i)) {
+                            const blob = await zipEntry.async("blob");
+                            await addImageToWorkspace(blob, zipEntry.name.split('/').pop()); // 순수 파일명만 추출
+                        }
+                    }
+                } else if (file.type.startsWith('image/')) {
+                    // 사진 앱 등에서 직접 선택한 이미지 파일인 경우
+                    await addImageToWorkspace(file, file.name);
+                }
             }
 
-            if (mode === 'auto') {
-                runAutoCropOnAll();
+            // 업로드가 끝나면 모드에 맞게 실행
+            if (uploadedFilesData.length > 0) {
+                if (mode === 'auto') {
+                    runAutoCropOnAll();
+                } else {
+                    loadManualImage(0);
+                }
             } else {
-                loadManualImage(0);
+                alert("처리할 이미지가 없습니다.");
             }
         });
 
@@ -268,7 +294,6 @@
         overlay.addEventListener('touchmove', draw, {passive: false});
         window.addEventListener('touchend', endDraw);
 
-        // ⭐ 수동 영역 자르기 완료 시 리사이징 적용
         document.getElementById('btnCrop').addEventListener('click', () => {
             const x = Math.min(startX, endX);
             const y = Math.min(startY, endY);
@@ -281,7 +306,6 @@
             resultCanvas.width = w; resultCanvas.height = h;
             resultCanvas.getContext('2d').putImageData(ctxBase.getImageData(x, y, w, h), 0, 0);
             
-            // 비율 보존 & 3000px 맞춤 스케일링
             const optimizedDataUrl = getHighQualityScaledUrl(resultCanvas);
             addResultCard(optimizedDataUrl);
             
@@ -317,7 +341,6 @@
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
         }
 
-        // ⭐ 자동 자르기 완료 시 리사이징 적용
         function processAutoCrop(img) {
             const tempC = document.createElement('canvas');
             tempC.width = img.width; tempC.height = img.height;
@@ -384,7 +407,6 @@
                         resultCanvas.width = rectW; resultCanvas.height = rectH;
                         resultCanvas.getContext('2d').putImageData(cropData, 0, 0);
                         
-                        // 비율 보존 & 3000px 맞춤 스케일링
                         const optimizedDataUrl = getHighQualityScaledUrl(resultCanvas);
                         addResultCard(optimizedDataUrl);
                     }
