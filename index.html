@@ -1,4 +1,4 @@
-<<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -41,14 +41,45 @@
         .card.selected { border-color: #007aff; }
         .card img { max-width: 120px; max-height: 120px; margin-top: 10px; background: #fafafa; border: 1px solid #eee; object-fit: contain; }
         .card input { cursor: pointer; width: 18px; height: 18px; }
+
+        /* ⭐ 로딩 오버레이 UI 추가 */
+        #loadingOverlay {
+            display: none; 
+            position: fixed; 
+            top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(255, 255, 255, 0.85); 
+            z-index: 9999; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+        .spinner {
+            border: 4px solid #e5e5ea;
+            border-top: 4px solid #007aff;
+            border-radius: 50%;
+            width: 48px; height: 48px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #loadingTitle { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
+        #loadingDesc { font-size: 14px; color: #666; }
     </style>
 </head>
 <body>
 
+    <!-- ⭐ 로딩 화면 영역 -->
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <div id="loadingTitle">이미지 처리 중...</div>
+        <div id="loadingDesc">잠시만 기다려주세요 (0/0)</div>
+    </div>
+
     <div class="box">
         <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기 (아이패드 최적화)</h2>
         <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. 자동으로 고화질(최대 3000px)에 맞춰 잘라냅니다.</p>
-        <!-- ⭐ 사진 앱 호출을 위한 image/* 및 ZIP 파일 허용 -->
         <input type="file" id="upload" accept="image/*, .zip" multiple>
     </div>
 
@@ -95,7 +126,21 @@
         const ctxOverlay = overlay.getContext('2d');
         const imageSelector = document.getElementById('imageSelector');
 
-        // 3000x3000 해상도 맞춤 및 화질 보존 스케일링 함수
+        // 로딩 UI 제어 함수
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingTitle = document.getElementById('loadingTitle');
+        const loadingDesc = document.getElementById('loadingDesc');
+
+        function showLoading(title, desc = "") {
+            loadingTitle.innerText = title;
+            loadingDesc.innerText = desc;
+            loadingOverlay.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            loadingOverlay.style.display = 'none';
+        }
+
         function getHighQualityScaledUrl(sourceCanvas) {
             const MAX_DIM = 3000;
             const w = sourceCanvas.width;
@@ -119,7 +164,6 @@
             return scaledCanvas.toDataURL('image/png');
         }
 
-        // ⭐ 공통 이미지 로드 및 드롭다운 추가 함수
         async function addImageToWorkspace(blobOrFile, filename) {
             const img = new Image();
             img.src = URL.createObjectURL(blobOrFile);
@@ -136,9 +180,11 @@
             imageSelector.appendChild(opt);
         }
 
-        // ⭐ 파일 업로드 처리 이벤트 (사진 앱 + ZIP 파일 동시 지원)
         upload.addEventListener('change', async (e) => {
             if(!e.target.files.length) return;
+            
+            showLoading("파일을 불러오는 중...", "압축 해제 및 이미지 변환 중입니다.");
+            
             output.innerHTML = '';
             stickerCount = 0;
             uploadedFilesData = [];
@@ -149,42 +195,52 @@
                 const file = e.target.files[i];
 
                 if (file.name.toLowerCase().endsWith('.zip')) {
-                    // ZIP 파일인 경우 압축을 풀어서 이미지 파일만 추출
                     const zip = new JSZip();
                     const loadedZip = await zip.loadAsync(file);
                     
                     for (const relativePath in loadedZip.files) {
                         const zipEntry = loadedZip.files[relativePath];
-                        // 폴더가 아니고, 맥OS 시스템 파일이 아니며, 이미지 확장자인 경우
                         if (!zipEntry.dir && !relativePath.includes('__MACOSX') && relativePath.match(/\.(png|jpe?g|webp)$/i)) {
                             const blob = await zipEntry.async("blob");
-                            await addImageToWorkspace(blob, zipEntry.name.split('/').pop()); // 순수 파일명만 추출
+                            await addImageToWorkspace(blob, zipEntry.name.split('/').pop());
                         }
                     }
                 } else if (file.type.startsWith('image/')) {
-                    // 사진 앱 등에서 직접 선택한 이미지 파일인 경우
                     await addImageToWorkspace(file, file.name);
                 }
             }
 
-            // 업로드가 끝나면 모드에 맞게 실행
             if (uploadedFilesData.length > 0) {
                 if (mode === 'auto') {
-                    runAutoCropOnAll();
+                    await runAutoCropOnAllAsync();
                 } else {
                     loadManualImage(0);
+                    hideLoading();
                 }
             } else {
+                hideLoading();
                 alert("처리할 이미지가 없습니다.");
             }
         });
 
-        function runAutoCropOnAll() {
+        // ⭐ 비동기 처리로 화면 렌더링을 차단하지 않도록 수정된 자동 크롭 함수
+        async function runAutoCropOnAllAsync() {
             output.innerHTML = '';
             stickerCount = 0;
-            uploadedFilesData.forEach(fileData => {
-                processAutoCrop(fileData.img);
-            });
+            const total = uploadedFilesData.length;
+
+            for (let i = 0; i < total; i++) {
+                // UI 업데이트: 현재 몇 번째 이미지를 처리 중인지 표시
+                showLoading("자동 크롭 진행 중...", `이미지 분석 중: ${i + 1} / ${total}`);
+                
+                // 브라우저가 화면(로딩바)을 업데이트할 수 있도록 짧은 시간 양보(yield)
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                // 실제 무거운 크롭 작업 실행
+                processAutoCrop(uploadedFilesData[i].img);
+            }
+
+            hideLoading();
         }
 
         function loadManualImage(index) {
@@ -217,13 +273,14 @@
             overlay.style.pointerEvents = 'auto'; 
         });
 
-        document.getElementById('btnAuto').addEventListener('click', function() {
+        // ⭐ 버튼 클릭 시에도 로딩 화면이 작동하도록 async 적용
+        document.getElementById('btnAuto').addEventListener('click', async function() {
             mode = 'auto';
             this.classList.add('active');
             document.getElementById('btnManual').classList.remove('active');
             document.getElementById('manualSubControls').style.display = 'none';
             workspace.style.display = 'none';
-            runAutoCropOnAll();
+            await runAutoCropOnAllAsync();
         });
 
         document.getElementById('btnManual').addEventListener('click', function() {
@@ -338,7 +395,10 @@
             card.appendChild(img);
             output.appendChild(card);
             
-            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+            // 로딩 중이 아닐 때만 자동 스크롤 (화면 튕김 방지)
+            if (loadingOverlay.style.display === 'none') {
+                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+            }
         }
 
         function processAutoCrop(img) {
@@ -425,22 +485,23 @@
             const checked = document.querySelectorAll('.card input:checked');
             if(!checked.length) return alert('다운로드할 스티커를 선택해주세요.');
             
-            const btn = document.getElementById('btnDownload');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '⏳ ZIP 압축 중...';
+            showLoading("ZIP 압축 중...", "다운로드가 곧 시작됩니다.");
             
-            const zip = new JSZip();
-            checked.forEach(cb => {
-                zip.file(cb.dataset.filename, cb.dataset.dataurl.split(',')[1], {base64: true});
-            });
-            
-            zip.generateAsync({type: "blob"}).then(content => {
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(content);
-                a.download = "stickers.zip";
-                a.click();
-                btn.innerHTML = originalText;
-            });
+            // 압축 과정도 UI 업데이트를 위해 비동기로 감싸기
+            setTimeout(() => {
+                const zip = new JSZip();
+                checked.forEach(cb => {
+                    zip.file(cb.dataset.filename, cb.dataset.dataurl.split(',')[1], {base64: true});
+                });
+                
+                zip.generateAsync({type: "blob"}).then(content => {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(content);
+                    a.download = "stickers.zip";
+                    a.click();
+                    hideLoading();
+                });
+            }, 50);
         });
     </script>
 </body>
