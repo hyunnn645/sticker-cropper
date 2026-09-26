@@ -39,19 +39,12 @@
         .card.selected { border-color: #007aff; }
         .card img { max-width: 120px; max-height: 120px; margin-top: 10px; margin-bottom: 10px; background: #fafafa; border: 1px solid #eee; object-fit: contain; }
         
-        /* ⭐ 파일 이름 변경용 입력칸 스타일 */
         .name-input { 
-            width: 100%; 
-            padding: 6px; 
-            font-size: 12px; 
-            border: 1px solid #ccc; 
-            border-radius: 6px; 
-            text-align: center; 
-            box-sizing: border-box; 
+            width: 100%; padding: 6px; font-size: 12px; border: 1px solid #ccc; 
+            border-radius: 6px; text-align: center; box-sizing: border-box; 
         }
         .name-input:focus { outline: 2px solid #007aff; border-color: transparent; }
         
-        /* 체크박스 위치 조정 */
         .check-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; }
         .check-wrap input[type="checkbox"] { cursor: pointer; width: 18px; height: 18px; margin: 0; }
         
@@ -67,6 +60,8 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         #loadingTitle { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
         #loadingDesc { font-size: 14px; color: #666; }
+        
+        .guidelines { background-color: #e8f4fd; padding: 10px 15px; border-radius: 8px; font-size: 13px; color: #0056b3; margin-top: 10px; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -79,7 +74,16 @@
 
     <div class="box">
         <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기</h2>
-        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. 자동으로 고화질(최대 3000px)에 맞춰 잘라냅니다. <b>다운로드 전 이름을 클릭해 수정할 수 있습니다.</b></p>
+        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. 자동으로 고화질 기준(약 3000px)에 맞춰 잘라냅니다. <b>다운로드 전 이름을 클릭해 수정할 수 있습니다.</b></p>
+        
+        <!-- 가이드라인 안내 박스 추가 -->
+        <div class="guidelines">
+            <strong>✅ 플랫폼 제출 규격 적용 완료</strong><br>
+            - 해상도: 가장 긴 변 기준 1500px ~ 9800px 내로 자동 조정<br>
+            - 용량: 단일 파일 50MB 초과 방지 체크<br>
+            - 벡터, 그라데이션 및 3D 콘텐츠용 고품질 PNG 변환
+        </div>
+
         <input type="file" id="upload" accept="image/*, .zip" multiple>
     </div>
 
@@ -139,14 +143,29 @@
             loadingOverlay.style.display = 'none';
         }
 
+        // ⭐ 플랫폼 제출 규격(최소 1500px, 최대 9800px) 보장 스케일링 함수
         function getHighQualityScaledUrl(sourceCanvas) {
-            const MAX_DIM = 3000;
+            const TARGET_DIM = 3000;
             const w = sourceCanvas.width;
             const h = sourceCanvas.height;
 
-            const scale = Math.min(MAX_DIM / w, MAX_DIM / h);
-            const targetW = Math.round(w * scale);
-            const targetH = Math.round(h * scale);
+            let scale = Math.min(TARGET_DIM / w, TARGET_DIM / h);
+            let targetW = Math.round(w * scale);
+            let targetH = Math.round(h * scale);
+
+            // 안전 장치: 가장 긴 변이 1500px보다 작다면 1500px로 상향
+            const maxSide = Math.max(targetW, targetH);
+            if (maxSide < 1500) {
+                const upScale = 1500 / maxSide;
+                targetW = Math.round(targetW * upScale);
+                targetH = Math.round(targetH * upScale);
+            } 
+            // 안전 장치: 가장 긴 변이 9800px을 넘는다면 9800px로 하향
+            else if (maxSide > 9800) {
+                const downScale = 9800 / maxSide;
+                targetW = Math.round(targetW * downScale);
+                targetH = Math.round(targetH * downScale);
+            }
 
             const scaledCanvas = document.createElement('canvas');
             scaledCanvas.width = targetW;
@@ -285,39 +304,40 @@
             ctxOverlay.clearRect(0, 0, overlay.width, overlay.height); startX = endX = startY = endY = 0;
         });
 
-        // ⭐ 결과 카드 생성 (텍스트 입력창 추가)
         function addResultCard(dataUrl) {
+            // ⭐ 50MB 용량 초과 체크 (base64 길이를 통해 바이트 근사치 계산)
+            const base64Data = dataUrl.split(',')[1];
+            const fileSizeInBytes = base64Data.length * 0.75;
+            if (fileSizeInBytes > 50 * 1024 * 1024) {
+                alert("주의: 처리된 이미지가 최대 파일 크기 50MB를 초과했습니다. 원본 이미지를 줄여서 다시 시도해주세요.");
+                return; // 50MB를 넘으면 카드에 추가하지 않음
+            }
+
             stickerCount++;
             const defaultFilename = `sticker_${String(stickerCount).padStart(3, '0')}`;
             
             const card = document.createElement('div');
             card.className = 'card selected';
             
-            // 상단: 체크박스
             const checkWrap = document.createElement('div');
             checkWrap.className = 'check-wrap';
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.checked = true;
-            checkbox.dataset.dataurl = dataUrl; // URL 데이터만 보관
+            checkbox.dataset.dataurl = dataUrl;
             checkWrap.appendChild(checkbox);
 
-            // 중앙: 이미지
             const img = document.createElement('img');
             img.src = dataUrl;
 
-            // 하단: 파일 이름 수정 텍스트칸
             const nameInput = document.createElement('input');
             nameInput.type = 'text';
             nameInput.className = 'name-input';
             nameInput.value = defaultFilename;
             
-            // 텍스트칸 클릭 시 카드 전체 선택이 토글되지 않도록 방지
             nameInput.addEventListener('click', (e) => e.stopPropagation());
-            // 모바일 키보드 사용 편의성 보장
             nameInput.addEventListener('touchstart', (e) => e.stopPropagation());
 
-            // 카드 클릭 시 체크박스 토글
             card.addEventListener('click', (e) => {
                 if(e.target !== checkbox && e.target !== nameInput) checkbox.checked = !checkbox.checked;
                 card.classList.toggle('selected', checkbox.checked);
@@ -325,7 +345,7 @@
 
             card.appendChild(checkWrap);
             card.appendChild(img);
-            card.appendChild(nameInput); // 입력칸 추가
+            card.appendChild(nameInput);
             output.appendChild(card);
             
             if (loadingOverlay.style.display === 'none') {
@@ -385,7 +405,6 @@
             document.querySelectorAll('.card').forEach(c => { c.classList.remove('selected'); c.querySelector('input[type="checkbox"]').checked = false; });
         });
         
-        // ⭐ ZIP 다운로드 시 입력된 이름을 가져와서 사용
         document.getElementById('btnDownload').addEventListener('click', () => {
             const checked = document.querySelectorAll('.card input[type="checkbox"]:checked');
             if(!checked.length) return alert('다운로드할 스티커를 선택해주세요.');
@@ -396,11 +415,9 @@
                 const zip = new JSZip();
                 checked.forEach(cb => {
                     const card = cb.closest('.card');
-                    // 카드 안에서 사용자가 적은 파일 이름을 가져옴
                     const nameInput = card.querySelector('.name-input');
                     let filename = nameInput.value.trim();
                     
-                    // 빈 칸이면 기본 이름 부여, .png 확장자 확인 후 붙임
                     if (!filename) filename = `unnamed_${Date.now()}`;
                     if (!filename.toLowerCase().endsWith('.png')) filename += '.png';
 
