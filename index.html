@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스티커 자동 자르기 & 배경 제거</title>
+    <title>스티커 자동 자르기</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body { font-family: -apple-system, sans-serif; background-color: #f5f5f7; padding: 20px; color: #333; margin: 0; }
@@ -15,61 +15,34 @@
         button.active { background: #333; color: white; }
         .primary { background: #007aff; color: white; }
         .warning { background: #ff3b30; color: white; }
-        .magic { background: #34c759; color: white; }
 
         #manualSubControls { display: none; gap: 10px; margin-bottom: 15px; background: #eef1f6; padding: 15px; border-radius: 8px; align-items: center; flex-wrap: wrap; border: 1px solid #d0d7e5; }
         select { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; font-weight: bold; background: white; }
 
-        /* 배경 제거 UI 스타일 */
-        #bgRemovalPanel {
-            display: none;
-            background: #ffffff;
-            margin-bottom: 20px;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
-        .bg-rm-header {
-            background: #cbf0e4;
-            padding: 15px 20px;
-            border: 2px solid #0a3a2a;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-weight: 900;
-            font-size: 18px;
-            color: #0a3a2a;
-        }
-        .bg-rm-header span { font-size: 12px; font-weight: normal; color: #555; margin-left: 10px; }
-        .bg-rm-toggle { background: #68dca6; border: 2px solid #0a3a2a; padding: 6px 24px; font-weight: 900; color: #0a3a2a; }
-        .bg-rm-body { padding: 20px; background: #fafafa; border: 2px solid #0a3a2a; border-top: none; }
-        .bg-rm-auto-btn { width: 100%; background: #cbf0e4; border: 2px solid #0a3a2a; padding: 12px; font-weight: 900; color: #0a3a2a; margin-bottom: 25px; }
-        .bg-rm-slider-wrap { margin-bottom: 25px; }
-        .bg-rm-labels { display: flex; justify-content: space-between; font-weight: 900; font-size: 16px; color: #0a3a2a; margin-bottom: 10px; }
-        .bg-rm-sublabels { display: flex; justify-content: space-between; font-size: 12px; color: #555; font-weight: bold; margin-top: 5px; }
-        .bg-rm-desc { font-size: 12px; color: #555; margin-top: 15px; font-weight: bold; }
-        .bg-rm-apply-btn { width: 100%; background: #163b2e; color: white; border: 2px solid #163b2e; padding: 16px; font-weight: 900; font-size: 16px; transition: 0.2s; }
-        .bg-rm-apply-btn:hover { background: #0a3a2a; }
-        input[type="range"] {
-            -webkit-appearance: none; width: 100%; height: 8px; background: #cbf0e4; border: 1px solid #0a3a2a; border-radius: 4px; outline: none;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none; appearance: none; width: 20px; height: 20px; background: #68dca6; border: 2px solid #0a3a2a; cursor: pointer; border-radius: 2px;
-        }
-
         #workspace { 
-            display: none; position: relative; width: 100%; margin-bottom: 20px; border: 2px solid #ccc; border-radius: 8px;
-            overflow: hidden; background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee); background-size: 16px 16px; background-position: 0 0, 8px 8px; 
+            display: none; 
+            position: relative; 
+            width: 100%; 
+            margin-bottom: 20px; 
+            border: 2px solid #ccc; 
+            border-radius: 8px;
+            overflow: hidden; 
+            background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee); 
+            background-size: 16px 16px; 
+            background-position: 0 0, 8px 8px; 
         }
         #baseCanvas { width: 100%; height: auto; display: block; }
         #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 
         #output { display: flex; flex-wrap: wrap; gap: 15px; }
-        .card { background: white; padding: 10px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid transparent; width: 160px; position: relative; }
+        .card { background: white; padding: 10px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid transparent; width: 140px; position: relative; }
         .card.selected { border-color: #007aff; }
-        .card img { max-width: 140px; max-height: 140px; margin-top: 10px; margin-bottom: 10px; background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee); background-size: 10px 10px; background-position: 0 0, 5px 5px; border: 1px solid #ddd; object-fit: contain; }
+        .card img { max-width: 120px; max-height: 120px; margin-top: 10px; margin-bottom: 10px; background: #fafafa; border: 1px solid #eee; object-fit: contain; }
         
-        .name-input { width: 100%; padding: 6px; font-size: 12px; border: 1px solid #ccc; border-radius: 6px; text-align: center; box-sizing: border-box; }
+        .name-input { 
+            width: 100%; padding: 6px; font-size: 12px; border: 1px solid #ccc; 
+            border-radius: 6px; text-align: center; box-sizing: border-box; 
+        }
         .name-input:focus { outline: 2px solid #007aff; border-color: transparent; }
         
         .check-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; }
@@ -100,14 +73,14 @@
     </div>
 
     <div class="box">
-        <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기 & 배경 제거</h2>
-        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. <b>이미지를 복사한 후 화면에 바로 붙여넣기(Ctrl+V) 해도 됩니다.</b></p>
+        <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기</h2>
+        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. <b>이미지를 복사한 후 화면에 바로 붙여넣기(Ctrl+V) 해도 됩니다.</b> 자동으로 고화질 기준(약 3000px)에 맞춰 잘라냅니다. <b>다운로드 전 이름을 클릭해 수정할 수 있습니다.</b></p>
         
         <div class="guidelines">
             <strong>✅ 플랫폼 제출 규격 적용 완료</strong><br>
-            - 해상도: 가로/세로 최소 1500px 자동 패딩 적용, 최대 9800px 내 조정<br>
-            - 배경 투명화: 스톡 이미지의 뿌연 배경을 클릭 한 번으로 제거<br>
-            - 용량: 단일 파일 50MB 초과 방지 체크
+            - 해상도: 가장 긴 변 기준 1500px ~ 9800px 내로 자동 조정<br>
+            - 용량: 단일 파일 50MB 초과 방지 체크<br>
+            - 벡터, 그라데이션 및 3D 콘텐츠용 고품질 PNG 변환
         </div>
 
         <input type="file" id="upload" accept="image/*, .zip" multiple>
@@ -117,36 +90,9 @@
         <button id="btnAuto" class="active">✨ 자동 자르기 모드</button>
         <button id="btnManual">✍️ 수동 자르기 모드</button>
         <div style="flex-grow: 1;"></div>
-        <button id="btnToggleBgPanel" class="magic">🪄 배경 투명하게 (선택 항목)</button>
         <button id="btnSelectAll">전체 선택</button>
         <button id="btnDeselectAll">전체 해제</button>
-        <button id="btnDownload" class="primary">📦 선택 항목 ZIP 다운로드</button>
-    </div>
-
-    <!-- 배경 제거 UI 패널 -->
-    <div id="bgRemovalPanel">
-        <div class="bg-rm-header">
-            <div>배경 투명하게 <span>JPG도 투명 PNG로 변환</span></div>
-            <button class="bg-rm-toggle">ON</button>
-        </div>
-        <div class="bg-rm-body">
-            <button class="bg-rm-auto-btn">자동 감지 · 추천</button>
-            <div class="bg-rm-slider-wrap">
-                <div class="bg-rm-labels">
-                    <span>정밀 배경 제거 강도</span>
-                    <span id="toleranceVal">38</span>
-                </div>
-                <input type="range" id="toleranceSlider" min="0" max="100" value="38">
-                <div class="bg-rm-sublabels">
-                    <span>그림 보호</span>
-                    <span>배경 강하게 제거</span>
-                </div>
-                <div class="bg-rm-desc">
-                    가장자리의 배경색을 자동 분석하고 선화·색상 경계를 만나면 멈춰 그림을 보호합니다. 배경이 남으면 강도를 1씩 올려보세요.
-                </div>
-            </div>
-            <button id="btnApplyBgRemoval" class="bg-rm-apply-btn">✓ 배경 제거 완료</button>
-        </div>
+        <button id="btnDownload" class="primary">📦 ZIP 다운로드</button>
     </div>
 
     <div id="manualSubControls">
@@ -186,18 +132,6 @@
         const loadingTitle = document.getElementById('loadingTitle');
         const loadingDesc = document.getElementById('loadingDesc');
 
-        const toleranceSlider = document.getElementById('toleranceSlider');
-        const toleranceVal = document.getElementById('toleranceVal');
-        
-        toleranceSlider.addEventListener('input', (e) => {
-            toleranceVal.innerText = e.target.value;
-        });
-
-        document.getElementById('btnToggleBgPanel').addEventListener('click', () => {
-            const panel = document.getElementById('bgRemovalPanel');
-            panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-        });
-
         function showLoading(title, desc = "") {
             loadingTitle.innerText = title;
             loadingDesc.innerText = desc;
@@ -208,10 +142,8 @@
             loadingOverlay.style.display = 'none';
         }
 
-        // 1500px 최소 보장 패딩 처리
         function getHighQualityScaledUrl(sourceCanvas) {
             const TARGET_DIM = 3000;
-            const MIN_DIM = 1500;
             const w = sourceCanvas.width;
             const h = sourceCanvas.height;
 
@@ -220,8 +152,8 @@
             let targetH = Math.round(h * scale);
 
             const maxSide = Math.max(targetW, targetH);
-            if (maxSide < MIN_DIM) {
-                const upScale = MIN_DIM / maxSide;
+            if (maxSide < 1500) {
+                const upScale = 1500 / maxSide;
                 targetW = Math.round(targetW * upScale);
                 targetH = Math.round(targetH * upScale);
             } 
@@ -231,21 +163,14 @@
                 targetH = Math.round(targetH * downScale);
             }
 
-            const finalW = Math.max(MIN_DIM, targetW);
-            const finalH = Math.max(MIN_DIM, targetH);
-
             const scaledCanvas = document.createElement('canvas');
-            scaledCanvas.width = finalW;
-            scaledCanvas.height = finalH;
+            scaledCanvas.width = targetW;
+            scaledCanvas.height = targetH;
             
             const ctx = scaledCanvas.getContext('2d');
-            ctx.clearRect(0, 0, finalW, finalH);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-
-            const dx = (finalW - targetW) / 2;
-            const dy = (finalH - targetH) / 2;
-            ctx.drawImage(sourceCanvas, dx, dy, targetW, targetH);
+            ctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
 
             return scaledCanvas.toDataURL('image/png');
         }
@@ -271,7 +196,6 @@
             uploadedFilesData = [];
             imageSelector.innerHTML = '';
             document.getElementById('controls').style.display = 'flex';
-            document.getElementById('bgRemovalPanel').style.display = 'none';
 
             for (let i = 0; i < e.target.files.length; i++) {
                 const file = e.target.files[i];
@@ -299,10 +223,12 @@
             }
         });
 
+        // ⭐ 붙여넣기(Ctrl+V) 이벤트 리스너 추가
         window.addEventListener('paste', async (e) => {
             const items = (e.clipboardData || e.originalEvent.clipboardData).items;
             let pastedImages = [];
 
+            // 클립보드 항목 중 이미지만 추출
             for (let i = 0; i < items.length; i++) {
                 if (items[i].type.indexOf('image') !== -1) {
                     const blob = items[i].getAsFile();
@@ -314,6 +240,7 @@
                 e.preventDefault();
                 showLoading("붙여넣은 이미지 처리 중...", "이미지 변환 중입니다.");
 
+                // 기존 파일 초기화 (업로드 시와 동일하게 덮어쓰기)
                 output.innerHTML = '';
                 stickerCount = 0;
                 uploadedFilesData = [];
@@ -503,89 +430,6 @@
                 }
             }
         }
-
-        // 배경 투명하게 로직
-        async function applyBackgroundRemoval(dataUrl, tolerancePercent) {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                    ctx.drawImage(img, 0, 0);
-                    
-                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const data = imgData.data;
-                    const w = canvas.width;
-                    const h = canvas.height;
-                    
-                    // 강도에 따른 허용 오차 계산 (0~100 -> 0~150 정도의 색상 차이)
-                    const tolerance = (tolerancePercent / 100) * 150;
-                    
-                    // 가장자리(0,0)의 색상을 배경색으로 기준
-                    const bgR = data[0], bgG = data[1], bgB = data[2];
-                    
-                    const visited = new Uint8Array(w * h);
-                    const queue = [];
-                    
-                    // 가장자리부터 큐에 삽입
-                    for (let x = 0; x < w; x++) {
-                        queue.push(x); // Top
-                        queue.push((h - 1) * w + x); // Bottom
-                    }
-                    for (let y = 0; y < h; y++) {
-                        queue.push(y * w); // Left
-                        queue.push(y * w + (w - 1)); // Right
-                    }
-
-                    let head = 0;
-                    while (head < queue.length) {
-                        const curr = queue[head++];
-                        if (visited[curr]) continue;
-                        visited[curr] = 1;
-
-                        const r = data[curr * 4], g = data[curr * 4 + 1], b = data[curr * 4 + 2], a = data[curr * 4 + 3];
-                        
-                        if (a > 0 && Math.abs(r - bgR) <= tolerance && Math.abs(g - bgG) <= tolerance && Math.abs(b - bgB) <= tolerance) {
-                            data[curr * 4 + 3] = 0; // 투명 처리
-                            
-                            const cx = curr % w, cy = Math.floor(curr / w);
-                            if (cx > 0) queue.push(curr - 1);
-                            if (cx < w - 1) queue.push(curr + 1);
-                            if (cy > 0) queue.push(curr - w);
-                            if (cy < h - 1) queue.push(curr + w);
-                        }
-                    }
-                    
-                    ctx.putImageData(imgData, 0, 0);
-                    resolve(canvas.toDataURL('image/png'));
-                };
-                img.src = dataUrl;
-            });
-        }
-
-        document.getElementById('btnApplyBgRemoval').addEventListener('click', async () => {
-            const checkedBoxes = document.querySelectorAll('.card input[type="checkbox"]:checked');
-            if (!checkedBoxes.length) return alert('배경을 지울 이미지를 선택해주세요.');
-
-            const tolerance = parseInt(document.getElementById('toleranceSlider').value, 10);
-            showLoading("배경 제거 중...", "선택한 이미지의 배경을 투명하게 만듭니다.");
-            
-            for (let i = 0; i < checkedBoxes.length; i++) {
-                const cb = checkedBoxes[i];
-                const card = cb.closest('.card');
-                const img = card.querySelector('img');
-                const originalDataUrl = cb.dataset.dataurl;
-                
-                const newDataUrl = await applyBackgroundRemoval(originalDataUrl, tolerance);
-                
-                cb.dataset.dataurl = newDataUrl;
-                img.src = newDataUrl;
-            }
-            
-            hideLoading();
-        });
 
         document.getElementById('btnSelectAll').addEventListener('click', () => {
             document.querySelectorAll('.card').forEach(c => { c.classList.add('selected'); c.querySelector('input[type="checkbox"]').checked = true; });
