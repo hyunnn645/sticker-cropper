@@ -1,3 +1,3 @@
 # sticker-cropper
 
-https://hyunnn645.github.io/imoji/
+https://hyunnn645.github.io/stiker-cropper/
