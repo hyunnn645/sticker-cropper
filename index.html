@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>스티커 자동/수동 정밀 자르기 (아이패드 최적화)</title>
+    <title>스티커 자동 자르기</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body { font-family: -apple-system, sans-serif; background-color: #f5f5f7; padding: 20px; color: #333; margin: 0; }
@@ -74,9 +74,8 @@
 
     <div class="box">
         <h2 style="margin-top:0;">✂️ 스티커 정밀 자르기</h2>
-        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. 자동으로 고화질 기준(약 3000px)에 맞춰 잘라냅니다. <b>다운로드 전 이름을 클릭해 수정할 수 있습니다.</b></p>
+        <p>사진 앱에서 이미지를 선택하거나, ZIP 파일을 올려주세요. <b>이미지를 복사한 후 화면에 바로 붙여넣기(Ctrl+V) 해도 됩니다.</b> 자동으로 고화질 기준(약 3000px)에 맞춰 잘라냅니다. <b>다운로드 전 이름을 클릭해 수정할 수 있습니다.</b></p>
         
-        <!-- 가이드라인 안내 박스 추가 -->
         <div class="guidelines">
             <strong>✅ 플랫폼 제출 규격 적용 완료</strong><br>
             - 해상도: 가장 긴 변 기준 1500px ~ 9800px 내로 자동 조정<br>
@@ -143,7 +142,6 @@
             loadingOverlay.style.display = 'none';
         }
 
-        // ⭐ 플랫폼 제출 규격(최소 1500px, 최대 9800px) 보장 스케일링 함수
         function getHighQualityScaledUrl(sourceCanvas) {
             const TARGET_DIM = 3000;
             const w = sourceCanvas.width;
@@ -153,14 +151,12 @@
             let targetW = Math.round(w * scale);
             let targetH = Math.round(h * scale);
 
-            // 안전 장치: 가장 긴 변이 1500px보다 작다면 1500px로 상향
             const maxSide = Math.max(targetW, targetH);
             if (maxSide < 1500) {
                 const upScale = 1500 / maxSide;
                 targetW = Math.round(targetW * upScale);
                 targetH = Math.round(targetH * upScale);
             } 
-            // 안전 장치: 가장 긴 변이 9800px을 넘는다면 9800px로 하향
             else if (maxSide > 9800) {
                 const downScale = 9800 / maxSide;
                 targetW = Math.round(targetW * downScale);
@@ -224,6 +220,44 @@
             } else {
                 hideLoading();
                 alert("처리할 이미지가 없습니다.");
+            }
+        });
+
+        // ⭐ 붙여넣기(Ctrl+V) 이벤트 리스너 추가
+        window.addEventListener('paste', async (e) => {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            let pastedImages = [];
+
+            // 클립보드 항목 중 이미지만 추출
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    if (blob) pastedImages.push(blob);
+                }
+            }
+
+            if (pastedImages.length > 0) {
+                e.preventDefault();
+                showLoading("붙여넣은 이미지 처리 중...", "이미지 변환 중입니다.");
+
+                // 기존 파일 초기화 (업로드 시와 동일하게 덮어쓰기)
+                output.innerHTML = '';
+                stickerCount = 0;
+                uploadedFilesData = [];
+                imageSelector.innerHTML = '';
+                document.getElementById('controls').style.display = 'flex';
+
+                for (let i = 0; i < pastedImages.length; i++) {
+                    const file = pastedImages[i];
+                    await addImageToWorkspace(file, `pasted_image_${Date.now()}_${i}.png`);
+                }
+
+                if (uploadedFilesData.length > 0) {
+                    if (mode === 'auto') await runAutoCropOnAllAsync();
+                    else { loadManualImage(0); hideLoading(); }
+                } else {
+                    hideLoading();
+                }
             }
         });
 
@@ -305,12 +339,11 @@
         });
 
         function addResultCard(dataUrl) {
-            // ⭐ 50MB 용량 초과 체크 (base64 길이를 통해 바이트 근사치 계산)
             const base64Data = dataUrl.split(',')[1];
             const fileSizeInBytes = base64Data.length * 0.75;
             if (fileSizeInBytes > 50 * 1024 * 1024) {
                 alert("주의: 처리된 이미지가 최대 파일 크기 50MB를 초과했습니다. 원본 이미지를 줄여서 다시 시도해주세요.");
-                return; // 50MB를 넘으면 카드에 추가하지 않음
+                return;
             }
 
             stickerCount++;
