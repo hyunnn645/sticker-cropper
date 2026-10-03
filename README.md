@@ -1,3 +1,3 @@
 # sticker-cropper
 
-https://hyunnn645.github.io/stiker-cropper/
+https://hyunnn645.github.io/sticker-cropper/
